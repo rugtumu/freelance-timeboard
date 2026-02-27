@@ -14,7 +14,8 @@ fn main() {
             db::db_delete_log,
             db::db_replace_logs,
             db::db_get_settings,
-            db::db_set_settings
+            db::db_set_settings,
+            db::save_text_file
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

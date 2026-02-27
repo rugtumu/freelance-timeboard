@@ -3,6 +3,7 @@ import { invoke } from "@tauri-apps/api/core";
 
 const STORAGE_KEYS = {
   logs: "work_tracker_logs_v1",
+  expenses: "work_tracker_expenses_v1",
   settings: "work_tracker_settings_v1"
 };
 
@@ -19,8 +20,10 @@ const DEFAULT_SETTINGS = {
 
 const state = {
   logs: [],
+  expenses: [],
   settings: { ...DEFAULT_SETTINGS },
   editingId: null,
+  editingExpenseId: null,
   activeTab: "dashboard"
 };
 
@@ -30,7 +33,6 @@ const I18N = {
     heading: "Günlük takip, performans analizi, tek panel",
     dashboard: "Panel",
     analysis: "Analiz",
-    exportJson: "JSON Dışa Aktar",
     exportCsv: "CSV Dışa Aktar",
     importCsv: "CSV İçe Aktar",
     toLightTheme: "Açık Tema",
@@ -38,6 +40,9 @@ const I18N = {
     themeToggleAria: "Temayı değiştir",
     langToggleAria: "Dili değiştir",
     records: "Kayıtlar",
+    income: "Gelir",
+    expense: "Gider",
+    budget: "Bütçe",
     totalHours: "Toplam Saat",
     cumulativeIncome: "Kümülatif Gelir",
     cumulativeIncomeTry: "Kümülatif Gelir (TL)",
@@ -116,14 +121,27 @@ const I18N = {
     duplicateDateWarn: "Aynı tarih tekrar etti ({date}), son satır kullanıldı.",
     language: "Dil",
     turkish: "Türkçe",
-    english: "English"
+    english: "English",
+    expenseEntry: "Gider Girişi",
+    amount: "Tutar",
+    currency: "Para Birimi",
+    category: "Kategori",
+    addExpense: "Gider Ekle",
+    updateExpense: "Gider Güncelle",
+    noExpenses: "Henüz gider yok.",
+    invalidExpense: "Geçerli tarih, tutar ve para birimi gir.",
+    totalExpense: "Toplam Gider",
+    netBalance: "Net Bakiye",
+    expenseBreakdown: "Gider Dağılımı",
+    noExpenseData: "Henüz gider verisi yok.",
+    exportSuccess: "Dosya kaydedildi: {path}",
+    exportFailed: "CSV dışa aktarım başarısız oldu."
   },
   en: {
     appOpenError: "Application failed to start",
     heading: "Daily tracking, performance analytics, single panel",
     dashboard: "Dashboard",
     analysis: "Analysis",
-    exportJson: "Export JSON",
     exportCsv: "Export CSV",
     importCsv: "Import CSV",
     toLightTheme: "Light Theme",
@@ -131,6 +149,9 @@ const I18N = {
     themeToggleAria: "Toggle theme",
     langToggleAria: "Toggle language",
     records: "Records",
+    income: "Income",
+    expense: "Expense",
+    budget: "Budget",
     totalHours: "Total Hours",
     cumulativeIncome: "Cumulative Income",
     cumulativeIncomeTry: "Cumulative Income (TRY)",
@@ -209,7 +230,21 @@ const I18N = {
     duplicateDateWarn: "Duplicate date detected ({date}), last row was used.",
     language: "Language",
     turkish: "Türkçe",
-    english: "English"
+    english: "English",
+    expenseEntry: "Expense Entry",
+    amount: "Amount",
+    currency: "Currency",
+    category: "Category",
+    addExpense: "Add Expense",
+    updateExpense: "Update Expense",
+    noExpenses: "No expenses yet.",
+    invalidExpense: "Enter valid date, amount and currency.",
+    totalExpense: "Total Expense",
+    netBalance: "Net Balance",
+    expenseBreakdown: "Expense Breakdown",
+    noExpenseData: "No expense data yet.",
+    exportSuccess: "File saved: {path}",
+    exportFailed: "CSV export failed."
   }
 };
 
@@ -226,6 +261,7 @@ function t(key, vars = {}) {
 async function bootstrap() {
   const loaded = await dataStore.load();
   state.logs = loaded.logs;
+  state.expenses = loaded.expenses;
   state.settings = { ...DEFAULT_SETTINGS, ...loaded.settings };
   applyTheme();
   renderApp();
@@ -242,6 +278,7 @@ const dataStore = {
 
         return {
           logs: Array.isArray(logs) ? logs.map(mapDbLogToUi) : [],
+          expenses: loadExpensesFromLocal(),
           settings: mapRawSettings(rawSettings)
         };
       } catch (error) {
@@ -251,6 +288,7 @@ const dataStore = {
 
     return {
       logs: loadLogsFromLocal(),
+      expenses: loadExpensesFromLocal(),
       settings: loadSettingsFromLocal()
     };
   },
@@ -295,6 +333,19 @@ const dataStore = {
     }
 
     localStorage.setItem(STORAGE_KEYS.logs, JSON.stringify(logs));
+  },
+
+  async upsertExpense(expense) {
+    const expenses = loadExpensesFromLocal();
+    const idx = expenses.findIndex((x) => x.id === expense.id);
+    if (idx >= 0) expenses[idx] = expense;
+    else expenses.push(expense);
+    localStorage.setItem(STORAGE_KEYS.expenses, JSON.stringify(expenses));
+  },
+
+  async deleteExpense(id) {
+    const expenses = loadExpensesFromLocal().filter((x) => x.id !== id);
+    localStorage.setItem(STORAGE_KEYS.expenses, JSON.stringify(expenses));
   }
 };
 
@@ -309,6 +360,17 @@ bootstrap().catch((error) => {
 function loadLogsFromLocal() {
   try {
     const raw = localStorage.getItem(STORAGE_KEYS.logs);
+    if (!raw) return [];
+    const parsed = JSON.parse(raw);
+    return Array.isArray(parsed) ? parsed : [];
+  } catch {
+    return [];
+  }
+}
+
+function loadExpensesFromLocal() {
+  try {
+    const raw = localStorage.getItem(STORAGE_KEYS.expenses);
     if (!raw) return [];
     const parsed = JSON.parse(raw);
     return Array.isArray(parsed) ? parsed : [];
@@ -368,6 +430,7 @@ function mapRawSettings(raw) {
 function renderApp() {
   const rowsDesc = deriveRows(state.logs, state.settings);
   const dashboard = deriveDashboard(rowsDesc, state.settings);
+  const budget = deriveBudget(rowsDesc, state.expenses, state.settings);
 
   const app = document.getElementById("app");
   app.innerHTML = `
@@ -390,7 +453,9 @@ function renderApp() {
       <nav class="tabs">
         <button class="tab ${state.activeTab === "dashboard" ? "active" : ""}" data-tab="dashboard">${t("dashboard")}</button>
         <button class="tab ${state.activeTab === "analysis" ? "active" : ""}" data-tab="analysis">${t("analysis")}</button>
-        <button class="tab ${state.activeTab === "records" ? "active" : ""}" data-tab="records">${t("records")}</button>
+        <button class="tab ${state.activeTab === "income" ? "active" : ""}" data-tab="income">${t("income")}</button>
+        <button class="tab ${state.activeTab === "expense" ? "active" : ""}" data-tab="expense">${t("expense")}</button>
+        <button class="tab ${state.activeTab === "budget" ? "active" : ""}" data-tab="budget">${t("budget")}</button>
       </nav>
 
       <div class="panel ${state.activeTab === "dashboard" ? "" : "hidden"}" data-panel="dashboard">
@@ -469,7 +534,7 @@ function renderApp() {
       </section>
       </div>
 
-      <div class="panel ${state.activeTab === "records" ? "" : "hidden"}" data-panel="records">
+      <div class="panel ${state.activeTab === "income" ? "" : "hidden"}" data-panel="income">
       <main class="layout">
         <section class="card">
           <h2>${state.editingId ? t("editRecord") : t("dailyEntry")}</h2>
@@ -553,9 +618,8 @@ function renderApp() {
       </main>
 
       <section class="card records-table-card">
-        <h2>${t("records")}</h2>
+        <h2>${t("income")}</h2>
         <div class="records-actions">
-          <button id="export-json" class="btn ghost">${t("exportJson")}</button>
           <button id="export-csv" class="btn ghost">${t("exportCsv")}</button>
           <label class="btn ghost file-btn">
             ${t("importCsv")}
@@ -584,8 +648,93 @@ function renderApp() {
         </div>
       </section>
       </div>
+
+      <div class="panel ${state.activeTab === "expense" ? "" : "hidden"}" data-panel="expense">
+      <main class="layout">
+        <section class="card">
+          <h2>${state.editingExpenseId ? t("updateExpense") : t("expenseEntry")}</h2>
+          <form id="expense-form" class="form-grid">
+            <label>
+              ${t("date")}
+              <input id="expense-date" name="date" type="date" required />
+            </label>
+            <label>
+              ${t("amount")}
+              <input id="expense-amount" name="amount" type="number" min="0" step="0.01" required />
+            </label>
+            <label>
+              ${t("currency")}
+              <select id="expense-currency" name="currency">
+                <option value="USD">USD</option>
+                <option value="TRY">TRY</option>
+              </select>
+            </label>
+            <label>
+              ${t("category")}
+              <input id="expense-category" name="category" type="text" maxlength="48" placeholder="Kira, Market, Ulaşım..." />
+            </label>
+            <label class="full">
+              ${t("note")}
+              <input id="expense-note" name="note" type="text" maxlength="180" placeholder="${t("notePlaceholder")}" />
+            </label>
+            <div class="form-actions full">
+              <button type="submit" class="btn primary">${state.editingExpenseId ? t("updateExpense") : t("addExpense")}</button>
+              <button type="button" id="cancel-expense-edit" class="btn ghost ${state.editingExpenseId ? "" : "hidden"}">${t("cancel")}</button>
+            </div>
+          </form>
+        </section>
+      </main>
+
+      <section class="card records-table-card">
+        <h2>${t("expense")}</h2>
+        <div class="table-wrap">
+          <table>
+            <thead>
+              <tr>
+                <th>${t("date")}</th>
+                <th>${t("category")}</th>
+                <th>${t("amount")}</th>
+                <th>USD</th>
+                <th>TRY</th>
+                <th>${t("note")}</th>
+                <th>${t("action")}</th>
+              </tr>
+            </thead>
+            <tbody>
+              ${state.expenses.length ? [...state.expenses].sort((a, b) => b.date.localeCompare(a.date)).map(renderExpenseRow).join("") : `<tr><td colspan="7" class="empty">${t("noExpenses")}</td></tr>`}
+            </tbody>
+          </table>
+        </div>
+      </section>
+      </div>
+
+      <div class="panel ${state.activeTab === "budget" ? "" : "hidden"}" data-panel="budget">
+      <section class="kpi-grid budget-grid">
+        <article class="card">
+          <h3>${t("cumulativeIncome")}</h3>
+          <p>${fmtMoney(budget.incomeUsd)}</p>
+          <small class="muted">${fmtTry(budget.incomeTry)}</small>
+        </article>
+        <article class="card">
+          <h3>${t("totalExpense")}</h3>
+          <p>${fmtMoney(budget.expenseUsd)}</p>
+          <small class="muted">${fmtTry(budget.expenseTry)}</small>
+        </article>
+        <article class="card">
+          <h3>${t("netBalance")}</h3>
+          <p>${fmtMoney(budget.netUsd)}</p>
+          <small class="muted">${fmtTry(budget.netTry)}</small>
+        </article>
+      </section>
+
+      <section class="card records-table-card">
+        <h2>${t("expenseBreakdown")}</h2>
+        ${budget.categories.length ? `<div class="budget-list">${budget.categories.map((c) => `<div class="budget-item"><b>${escapeHtml(c.category)}</b><span>${fmtTry(c.tryAmount)} (${fmtMoney(c.usdAmount)})</span></div>`).join("")}</div>` : `<p class="muted">${t("noExpenseData")}</p>`}
+      </section>
+      </div>
     </div>
-  `;
+  
+`;
 
   bindEvents(rowsDesc);
   initializeForm();
@@ -598,6 +747,8 @@ function bindEvents(rowsDesc) {
   const customWrap = document.getElementById("custom-rate-wrap");
   const cancelEditBtn = document.getElementById("cancel-edit");
   const importCsvInput = document.getElementById("import-csv");
+  const expenseForm = document.getElementById("expense-form");
+  const cancelExpenseEditBtn = document.getElementById("cancel-expense-edit");
   const themeToggle = document.getElementById("theme-toggle");
   const langToggle = document.getElementById("lang-toggle");
   const refreshUsdTryBtn = document.getElementById("refresh-usd-try");
@@ -610,11 +761,11 @@ function bindEvents(rowsDesc) {
     });
   });
 
-  rateMode.addEventListener("change", () => {
+  rateMode?.addEventListener("change", () => {
     customWrap.classList.toggle("hidden", rateMode.value !== "custom");
   });
 
-  themeToggle.addEventListener("click", async () => {
+  themeToggle?.addEventListener("click", async () => {
     const previousTheme = state.settings.theme;
     state.settings.theme = state.settings.theme === "dark" ? "light" : "dark";
     applyTheme();
@@ -631,7 +782,7 @@ function bindEvents(rowsDesc) {
     }
   });
 
-  langToggle.addEventListener("click", async () => {
+  langToggle?.addEventListener("click", async () => {
     const previousLang = state.settings.language;
     state.settings.language = state.settings.language === "tr" ? "en" : "tr";
     renderApp();
@@ -669,7 +820,7 @@ function bindEvents(rowsDesc) {
     await handleUsdTryRefresh(refreshUsdTryCardBtn);
   });
 
-  entryForm.addEventListener("submit", async (e) => {
+  entryForm?.addEventListener("submit", async (e) => {
     e.preventDefault();
     const form = new FormData(entryForm);
 
@@ -716,7 +867,7 @@ function bindEvents(rowsDesc) {
     renderApp();
   });
 
-  settingsForm.addEventListener("submit", async (e) => {
+  settingsForm?.addEventListener("submit", async (e) => {
     e.preventDefault();
 
     const standardRateUsd = Number(document.getElementById("setting-standard").value);
@@ -817,20 +968,82 @@ function bindEvents(rowsDesc) {
       alert(`${t("importDoneWarnings")}\n- ${result.warnings.slice(0, 5).join("\n- ")}`);
     }
   });
-
-  document.getElementById("export-json")?.addEventListener("click", () => {
-    downloadFile(JSON.stringify(state.logs, null, 2), `work-logs-${todayIso()}.json`, "application/json");
+  document.getElementById("export-csv")?.addEventListener("click", async () => {
+    const csv = buildExportCsv(rowsDesc);
+    const filename = `work-logs-${todayIso()}.csv`;
+    await saveTextFile(filename, `\uFEFF${csv}`);
   });
 
-  document.getElementById("export-csv")?.addEventListener("click", () => {
-    const csv = buildExportCsv(rowsDesc);
-    downloadFile(csv, `work-logs-${todayIso()}.csv`, "text/csv;charset=utf-8;");
+  expenseForm?.addEventListener("submit", async (e) => {
+    e.preventDefault();
+    const form = new FormData(expenseForm);
+    const date = String(form.get("date") || "").trim();
+    const amount = Number(form.get("amount"));
+    const currency = String(form.get("currency") || "USD").toUpperCase();
+    const category = String(form.get("category") || "").trim() || "Diğer";
+    const note = String(form.get("note") || "").trim();
+
+    if (!date || !Number.isFinite(amount) || amount < 0 || !["USD", "TRY"].includes(currency)) {
+      alert(t("invalidExpense"));
+      return;
+    }
+
+    const payload = {
+      id: state.editingExpenseId || uid(),
+      date,
+      amount: round(amount, 2),
+      currency,
+      category,
+      note
+    };
+
+    state.expenses = state.expenses.filter((x) => x.id !== payload.id);
+    state.expenses.push(payload);
+    await dataStore.upsertExpense(payload);
+    state.editingExpenseId = null;
+    renderApp();
+  });
+
+  cancelExpenseEditBtn?.addEventListener("click", () => {
+    state.editingExpenseId = null;
+    renderApp();
+  });
+
+  document.querySelectorAll("[data-expense-action='edit']").forEach((btn) => {
+    btn.addEventListener("click", () => {
+      const id = btn.getAttribute("data-id");
+      const row = state.expenses.find((r) => r.id === id);
+      if (!row) return;
+
+      state.editingExpenseId = row.id;
+      renderApp();
+
+      document.getElementById("expense-date").value = row.date;
+      document.getElementById("expense-amount").value = String(row.amount);
+      document.getElementById("expense-currency").value = row.currency;
+      document.getElementById("expense-category").value = row.category || "";
+      document.getElementById("expense-note").value = row.note || "";
+    });
+  });
+
+  document.querySelectorAll("[data-expense-action='delete']").forEach((btn) => {
+    btn.addEventListener("click", async () => {
+      const id = btn.getAttribute("data-id");
+      if (!confirm(t("deleteConfirm"))) return;
+
+      state.expenses = state.expenses.filter((x) => x.id !== id);
+      if (state.editingExpenseId === id) state.editingExpenseId = null;
+      await dataStore.deleteExpense(id);
+      renderApp();
+    });
   });
 }
 
 function initializeForm() {
   const dateInput = document.getElementById("entry-date");
   if (dateInput && !dateInput.value) dateInput.value = todayIso();
+  const expenseDateInput = document.getElementById("expense-date");
+  if (expenseDateInput && !expenseDateInput.value) expenseDateInput.value = todayIso();
 }
 
 function deriveRows(logs, settings) {
@@ -1059,6 +1272,50 @@ function buildHeatmap(rowsDesc, weekCount) {
   };
 }
 
+function deriveBudget(rowsDesc, expenses, settings) {
+  const incomeUsd = rowsDesc.reduce((sum, r) => sum + (Number(r.dailyUsd) || 0), 0);
+  const incomeTry = rowsDesc.reduce((sum, r) => sum + (Number(r.dailyTry) || 0), 0);
+  const usdTry = Number(settings.usdTry) || 1;
+
+  const normalizedExpenses = (expenses || []).map((x) => {
+    const amount = Number(x.amount) || 0;
+    const currency = String(x.currency || "USD").toUpperCase() === "TRY" ? "TRY" : "USD";
+    const usdAmount = currency === "USD" ? amount : amount / usdTry;
+    const tryAmount = currency === "TRY" ? amount : amount * usdTry;
+    return {
+      ...x,
+      usdAmount: round(usdAmount, 2),
+      tryAmount: round(tryAmount, 2),
+      category: String(x.category || "Diğer")
+    };
+  });
+
+  const expenseUsd = normalizedExpenses.reduce((sum, x) => sum + x.usdAmount, 0);
+  const expenseTry = normalizedExpenses.reduce((sum, x) => sum + x.tryAmount, 0);
+
+  const categoryMap = new Map();
+  for (const item of normalizedExpenses) {
+    const prev = categoryMap.get(item.category) || { category: item.category, usdAmount: 0, tryAmount: 0 };
+    prev.usdAmount += item.usdAmount;
+    prev.tryAmount += item.tryAmount;
+    categoryMap.set(item.category, prev);
+  }
+
+  const categories = Array.from(categoryMap.values())
+    .map((c) => ({ ...c, usdAmount: round(c.usdAmount, 2), tryAmount: round(c.tryAmount, 2) }))
+    .sort((a, b) => b.tryAmount - a.tryAmount);
+
+  return {
+    incomeUsd: round(incomeUsd, 2),
+    incomeTry: round(incomeTry, 2),
+    expenseUsd: round(expenseUsd, 2),
+    expenseTry: round(expenseTry, 2),
+    netUsd: round(incomeUsd - expenseUsd, 2),
+    netTry: round(incomeTry - expenseTry, 2),
+    categories
+  };
+}
+
 function progressBar(pct) {
   const safe = Math.max(0, Math.min(100, pct));
   return `<div class="progress"><span style="width:${safe.toFixed(1)}%"></span><b>${safe.toFixed(1)}%</b></div>`;
@@ -1262,9 +1519,52 @@ function renderRow(row) {
       <td>${fmtHours(row.cumulativeHours)}</td>
       <td>${fmtHours(row.rolling10dAvg)}</td>
       <td class="muted">${escapeHtml(row.note || "")}</td>
-      <td class="actions">
-        <button class="btn tiny" data-action="edit" data-id="${row.id}">${t("edit")}</button>
-        <button class="btn tiny danger" data-action="delete" data-id="${row.id}">${t("delete")}</button>
+      <td>
+        <div class="row-actions">
+          <button class="btn tiny icon-btn" data-action="edit" data-id="${row.id}" title="${t("edit")}" aria-label="${t("edit")}">
+            ${editIcon()}
+          </button>
+          <button class="btn tiny danger icon-btn" data-action="delete" data-id="${row.id}" title="${t("delete")}" aria-label="${t("delete")}">
+            ${trashIcon()}
+          </button>
+        </div>
+      </td>
+    </tr>
+  `;
+}
+
+function editIcon() {
+  return `<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 20h4l10-10-4-4L4 16v4z" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/><path d="M12 6l4 4" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/></svg>`;
+}
+
+function trashIcon() {
+  return `<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M3 6h18" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/><path d="M8 6V4h8v2" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/><path d="M19 6l-1 14H6L5 6" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/></svg>`;
+}
+
+function renderExpenseRow(expense) {
+  const usdTry = Number(state.settings.usdTry) || 1;
+  const amount = Number(expense.amount) || 0;
+  const currency = String(expense.currency || "USD").toUpperCase() === "TRY" ? "TRY" : "USD";
+  const usdAmount = currency === "USD" ? amount : amount / usdTry;
+  const tryAmount = currency === "TRY" ? amount : amount * usdTry;
+
+  return `
+    <tr>
+      <td>${expense.date || ""}</td>
+      <td>${escapeHtml(expense.category || "Diğer")}</td>
+      <td>${currency} ${round(amount, 2).toFixed(2)}</td>
+      <td>${fmtMoney(usdAmount)}</td>
+      <td>${fmtTry(tryAmount)}</td>
+      <td class="muted">${escapeHtml(expense.note || "")}</td>
+      <td>
+        <div class="row-actions">
+          <button class="btn tiny icon-btn" data-expense-action="edit" data-id="${expense.id}" title="${t("edit")}" aria-label="${t("edit")}">
+            ${editIcon()}
+          </button>
+          <button class="btn tiny danger icon-btn" data-expense-action="delete" data-id="${expense.id}" title="${t("delete")}" aria-label="${t("delete")}">
+            ${trashIcon()}
+          </button>
+        </div>
       </td>
     </tr>
   `;
@@ -1543,14 +1843,31 @@ function toNum(value) {
   return Number(cleaned);
 }
 
+async function saveTextFile(filename, content) {
+  if (isTauriRuntime()) {
+    try {
+      const path = await invoke("save_text_file", { filename, content });
+      alert(t("exportSuccess", { path }));
+      return;
+    } catch (error) {
+      console.error("Tauri file save failed, fallback browser download:", error);
+      alert(t("exportFailed"));
+    }
+  }
+
+  downloadFile(content, filename, "text/csv;charset=utf-8;");
+}
+
 function downloadFile(content, filename, type) {
   const blob = new Blob([content], { type });
   const url = URL.createObjectURL(blob);
   const a = document.createElement("a");
   a.href = url;
   a.download = filename;
+  document.body.appendChild(a);
   a.click();
-  URL.revokeObjectURL(url);
+  document.body.removeChild(a);
+  setTimeout(() => URL.revokeObjectURL(url), 0);
 }
 
 function fmtHours(value) {

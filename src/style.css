@@ -521,9 +521,15 @@ thead th {
   letter-spacing: 0.04em;
 }
 
-.actions {
+.row-actions {
   display: flex;
   gap: 0.35rem;
+}
+
+.row-actions .btn.tiny.icon-btn {
+  width: 30px;
+  height: 30px;
+  padding: 0;
 }
 
 .muted {
@@ -560,4 +566,31 @@ thead th {
     align-items: flex-start;
     flex-direction: column;
   }
+}
+
+
+.budget-list {
+  display: grid;
+  gap: 0.55rem;
+}
+
+.budget-item {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 0.8rem;
+  padding: 0.55rem 0.65rem;
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  background: var(--surface-alt);
+}
+
+.budget-item b {
+  font-size: 0.88rem;
+}
+
+.budget-item span {
+  color: var(--muted);
+  font-family: "IBM Plex Mono", monospace;
+  font-size: 0.8rem;
 }

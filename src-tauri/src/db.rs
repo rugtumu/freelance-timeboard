@@ -216,3 +216,25 @@ pub fn db_set_settings(
 
     Ok(())
 }
+
+#[tauri::command]
+pub fn save_text_file(app: tauri::AppHandle, filename: String, content: String) -> Result<String, String> {
+    let safe_name = filename
+        .chars()
+        .map(|c| if matches!(c, '/' | '\\' | ':' | '*' | '?' | '"' | '<' | '>' | '|') { '_' } else { c })
+        .collect::<String>();
+
+    let dir = app
+        .path()
+        .download_dir()
+        .or_else(|_| app.path().desktop_dir())
+        .or_else(|_| app.path().app_data_dir())
+        .map_err(|e| format!("resolve output dir error: {e}"))?;
+
+    fs::create_dir_all(&dir).map_err(|e| format!("create output dir error: {e}"))?;
+
+    let path = dir.join(safe_name);
+    fs::write(&path, content).map_err(|e| format!("write file error: {e}"))?;
+
+    Ok(path.to_string_lossy().to_string())
+}
