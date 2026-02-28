@@ -24,7 +24,12 @@ const state = {
   settings: { ...DEFAULT_SETTINGS },
   editingId: null,
   editingExpenseId: null,
-  activeTab: "dashboard"
+  activeTab: "dashboard",
+  budgetView: {
+    range: "90d",
+    granularity: "daily",
+    currency: "TRY"
+  }
 };
 
 const I18N = {
@@ -135,7 +140,21 @@ const I18N = {
     expenseBreakdown: "Gider Dağılımı",
     noExpenseData: "Henüz gider verisi yok.",
     exportSuccess: "Dosya kaydedildi: {path}",
-    exportFailed: "CSV dışa aktarım başarısız oldu."
+    exportFailed: "CSV dışa aktarım başarısız oldu.",
+    budgetTrend: "Gelir - Gider - Net Trend",
+    cumulativeNet: "Kümülatif Net Bakiye",
+    budgetRange: "Aralık",
+    granularity: "Detay",
+    daily: "Günlük",
+    weekly: "Haftalık",
+    range30d: "30 gün",
+    range90d: "90 gün",
+    rangeYtd: "Yıl başından bugüne",
+    rangeAll: "Tümü",
+    uncategorized: "Diğer",
+    incomeLegend: "Gelir",
+    expenseLegend: "Gider",
+    netLegend: "Net"
   },
   en: {
     appOpenError: "Application failed to start",
@@ -244,7 +263,21 @@ const I18N = {
     expenseBreakdown: "Expense Breakdown",
     noExpenseData: "No expense data yet.",
     exportSuccess: "File saved: {path}",
-    exportFailed: "CSV export failed."
+    exportFailed: "CSV export failed.",
+    budgetTrend: "Income - Expense - Net Trend",
+    cumulativeNet: "Cumulative Net Balance",
+    budgetRange: "Range",
+    granularity: "Granularity",
+    daily: "Daily",
+    weekly: "Weekly",
+    range30d: "30 days",
+    range90d: "90 days",
+    rangeYtd: "Year to date",
+    rangeAll: "All",
+    uncategorized: "Other",
+    incomeLegend: "Income",
+    expenseLegend: "Expense",
+    netLegend: "Net"
   }
 };
 
@@ -472,7 +505,7 @@ function mapRawSettings(raw) {
 function renderApp() {
   const rowsDesc = deriveRows(state.logs, state.settings);
   const dashboard = deriveDashboard(rowsDesc, state.settings);
-  const budget = deriveBudget(rowsDesc, state.expenses, state.settings);
+  const budget = deriveBudget(rowsDesc, state.expenses, state.settings, state.budgetView);
 
   const app = document.getElementById("app");
   app.innerHTML = `
@@ -751,6 +784,35 @@ function renderApp() {
       </div>
 
       <div class="panel ${state.activeTab === "budget" ? "" : "hidden"}" data-panel="budget">
+      <section class="card budget-controls-card">
+        <div class="budget-controls">
+          <label>
+            ${t("budgetRange")}
+            <select id="budget-range">
+              <option value="30d" ${state.budgetView.range === "30d" ? "selected" : ""}>${t("range30d")}</option>
+              <option value="90d" ${state.budgetView.range === "90d" ? "selected" : ""}>${t("range90d")}</option>
+              <option value="ytd" ${state.budgetView.range === "ytd" ? "selected" : ""}>${t("rangeYtd")}</option>
+              <option value="all" ${state.budgetView.range === "all" ? "selected" : ""}>${t("rangeAll")}</option>
+            </select>
+          </label>
+          <label>
+            ${t("granularity")}
+            <select id="budget-granularity">
+              <option value="daily" ${state.budgetView.granularity === "daily" ? "selected" : ""}>${t("daily")}</option>
+              <option value="weekly" ${state.budgetView.granularity === "weekly" ? "selected" : ""}>${t("weekly")}</option>
+              <option value="monthly" ${state.budgetView.granularity === "monthly" ? "selected" : ""}>${t("monthly")}</option>
+            </select>
+          </label>
+          <label>
+            ${t("currency")}
+            <select id="budget-currency">
+              <option value="TRY" ${state.budgetView.currency === "TRY" ? "selected" : ""}>TRY</option>
+              <option value="USD" ${state.budgetView.currency === "USD" ? "selected" : ""}>USD</option>
+            </select>
+          </label>
+        </div>
+      </section>
+
       <section class="kpi-grid budget-grid">
         <article class="card">
           <h3>${t("cumulativeIncome")}</h3>
@@ -769,9 +831,24 @@ function renderApp() {
         </article>
       </section>
 
+      <section class="viz-grid budget-viz-grid">
+        <article class="card full-viz">
+          <h3>${t("budgetTrend")}</h3>
+          ${budgetTrendChartSvg(budget.series, state.budgetView.currency)}
+        </article>
+        <article class="card">
+          <h3>${t("cumulativeNet")}</h3>
+          ${budgetCumulativeChartSvg(budget.series, state.budgetView.currency)}
+        </article>
+        <article class="card">
+          <h3>${t("expenseBreakdown")}</h3>
+          ${budgetDonutSvg(budget.categories, state.budgetView.currency)}
+        </article>
+      </section>
+
       <section class="card records-table-card">
         <h2>${t("expenseBreakdown")}</h2>
-        ${budget.categories.length ? `<div class="budget-list">${budget.categories.map((c) => `<div class="budget-item"><b>${escapeHtml(c.category)}</b><span>${fmtTry(c.tryAmount)} (${fmtMoney(c.usdAmount)})</span></div>`).join("")}</div>` : `<p class="muted">${t("noExpenseData")}</p>`}
+        ${budget.categories.length ? `<div class="budget-list">${budget.categories.map((c) => `<div class="budget-item"><b>${escapeHtml(c.category)}</b><span>${fmtCurrency(c, state.budgetView.currency)} (${fmtCurrency(c, state.budgetView.currency === "TRY" ? "USD" : "TRY")})</span></div>`).join("")}</div>` : `<p class="muted">${t("noExpenseData")}</p>`}
       </section>
       </div>
     </div>
