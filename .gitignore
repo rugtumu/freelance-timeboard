@@ -40,3 +40,6 @@ TO_DO.md
 
 # Temporary backups
 *.bak
+
+# Documentation workspace
+docs/

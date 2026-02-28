@@ -13,6 +13,9 @@ fn main() {
             db::db_upsert_log,
             db::db_delete_log,
             db::db_replace_logs,
+            db::db_get_expenses,
+            db::db_upsert_expense,
+            db::db_delete_expense,
             db::db_get_settings,
             db::db_set_settings,
             db::save_text_file

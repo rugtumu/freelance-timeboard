@@ -16,6 +16,16 @@ pub struct WorkLog {
     pub cycle_id: String,
 }
 
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct Expense {
+    pub id: String,
+    pub date: String,
+    pub amount: f64,
+    pub currency: String,
+    pub category: String,
+    pub note: String,
+}
+
 fn db_path(app: &tauri::AppHandle) -> Result<PathBuf, String> {
     let dir = app
         .path()
@@ -49,6 +59,15 @@ pub fn init_db(app: &tauri::AppHandle) -> Result<(), String> {
         CREATE TABLE IF NOT EXISTS settings (
           key TEXT PRIMARY KEY,
           value TEXT NOT NULL
+        );
+
+        CREATE TABLE IF NOT EXISTS expenses (
+          id TEXT PRIMARY KEY,
+          date TEXT NOT NULL,
+          amount REAL NOT NULL,
+          currency TEXT NOT NULL,
+          category TEXT NOT NULL,
+          note TEXT NOT NULL DEFAULT ''
         );
         ",
     )
@@ -214,6 +233,74 @@ pub fn db_set_settings(
     tx.commit()
         .map_err(|e| format!("settings commit error: {e}"))?;
 
+    Ok(())
+}
+
+#[tauri::command]
+pub fn db_get_expenses(app: tauri::AppHandle) -> Result<Vec<Expense>, String> {
+    let conn = open_conn(&app)?;
+    let mut stmt = conn
+        .prepare(
+            "SELECT id, date, amount, currency, category, note
+             FROM expenses
+             ORDER BY date ASC",
+        )
+        .map_err(|e| format!("prepare select expenses error: {e}"))?;
+
+    let rows = stmt
+        .query_map([], |row| {
+            Ok(Expense {
+                id: row.get(0)?,
+                date: row.get(1)?,
+                amount: row.get(2)?,
+                currency: row.get(3)?,
+                category: row.get(4)?,
+                note: row.get(5)?,
+            })
+        })
+        .map_err(|e| format!("query expenses error: {e}"))?;
+
+    let mut expenses = Vec::new();
+    for row in rows {
+        expenses.push(row.map_err(|e| format!("row map expenses error: {e}"))?);
+    }
+
+    Ok(expenses)
+}
+
+#[tauri::command]
+pub fn db_upsert_expense(app: tauri::AppHandle, expense: Expense) -> Result<(), String> {
+    let conn = open_conn(&app)?;
+    conn.execute(
+        "
+        INSERT INTO expenses (id, date, amount, currency, category, note)
+        VALUES (?1, ?2, ?3, ?4, ?5, ?6)
+        ON CONFLICT(id) DO UPDATE SET
+          date = excluded.date,
+          amount = excluded.amount,
+          currency = excluded.currency,
+          category = excluded.category,
+          note = excluded.note
+        ",
+        params![
+            expense.id,
+            expense.date,
+            expense.amount,
+            expense.currency,
+            expense.category,
+            expense.note
+        ],
+    )
+    .map_err(|e| format!("upsert expense error: {e}"))?;
+
+    Ok(())
+}
+
+#[tauri::command]
+pub fn db_delete_expense(app: tauri::AppHandle, id: String) -> Result<(), String> {
+    let conn = open_conn(&app)?;
+    conn.execute("DELETE FROM expenses WHERE id = ?1", params![id])
+        .map_err(|e| format!("delete expense error: {e}"))?;
     Ok(())
 }
 

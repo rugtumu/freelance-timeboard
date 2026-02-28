@@ -271,14 +271,24 @@ const dataStore = {
   async load() {
     if (isTauriRuntime()) {
       try {
-        const [logs, rawSettings] = await Promise.all([
+        const [logs, expenses, rawSettings] = await Promise.all([
           invoke("db_get_logs"),
+          invoke("db_get_expenses"),
           invoke("db_get_settings")
         ]);
 
+        let hydratedExpenses = Array.isArray(expenses) ? expenses.map(mapDbExpenseToUi) : [];
+        const localExpenses = loadExpensesFromLocal();
+        if (!hydratedExpenses.length && localExpenses.length) {
+          for (const expense of localExpenses) {
+            await invoke("db_upsert_expense", { expense: mapUiExpenseToDb(expense) });
+          }
+          hydratedExpenses = [...localExpenses];
+        }
+
         return {
           logs: Array.isArray(logs) ? logs.map(mapDbLogToUi) : [],
-          expenses: loadExpensesFromLocal(),
+          expenses: hydratedExpenses,
           settings: mapRawSettings(rawSettings)
         };
       } catch (error) {
@@ -336,6 +346,11 @@ const dataStore = {
   },
 
   async upsertExpense(expense) {
+    if (isTauriRuntime()) {
+      await invoke("db_upsert_expense", { expense: mapUiExpenseToDb(expense) });
+      return;
+    }
+
     const expenses = loadExpensesFromLocal();
     const idx = expenses.findIndex((x) => x.id === expense.id);
     if (idx >= 0) expenses[idx] = expense;
@@ -344,6 +359,11 @@ const dataStore = {
   },
 
   async deleteExpense(id) {
+    if (isTauriRuntime()) {
+      await invoke("db_delete_expense", { id });
+      return;
+    }
+
     const expenses = loadExpensesFromLocal().filter((x) => x.id !== id);
     localStorage.setItem(STORAGE_KEYS.expenses, JSON.stringify(expenses));
   }
@@ -410,6 +430,28 @@ function mapUiLogToDb(log) {
     usd_try: Number(log.usdTry) || 1,
     note: String(log.note || ""),
     cycle_id: String(log.cycleId || log.date.slice(0, 7))
+  };
+}
+
+function mapDbExpenseToUi(expense) {
+  return {
+    id: String(expense.id),
+    date: String(expense.date),
+    amount: Number(expense.amount) || 0,
+    currency: String(expense.currency || "USD").toUpperCase() === "TRY" ? "TRY" : "USD",
+    category: String(expense.category || ""),
+    note: String(expense.note || "")
+  };
+}
+
+function mapUiExpenseToDb(expense) {
+  return {
+    id: String(expense.id),
+    date: String(expense.date),
+    amount: Number(expense.amount) || 0,
+    currency: String(expense.currency || "USD").toUpperCase() === "TRY" ? "TRY" : "USD",
+    category: String(expense.category || ""),
+    note: String(expense.note || "")
   };
 }
 
