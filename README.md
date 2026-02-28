@@ -1,6 +1,6 @@
 # Freelance Timeboard
 
-Freelance çalışanlar için günlük çalışma, gelir ve gider takibi uygulaması.
+Günlük çalışma, gelir/gider, investment/trade takibi uygulaması.
 
 ![Dashboard (mock data)](src/data/dashboard.png)
 
@@ -19,8 +19,7 @@ Freelance çalışanlar için günlük çalışma, gelir ve gider takibi uygulam
 
 ## Veri Katmanı
 - Tauri (desktop):
-  - Gelir kayıtları ve ayarlar: SQLite
-  - Gider kayıtları: localStorage
+  - Gelir kayıtları, gider kayıtları ve ayarlar: SQLite
 - Web fallback: localStorage
 
 ## Kurulum
@@ -45,3 +44,9 @@ Freelance çalışanlar için günlük çalışma, gelir ve gider takibi uygulam
 ## Notlar
 - Canlı USD/TRY çekimi ağ erişimine bağlıdır; başarısız olursa manuel değer kullanılabilir.
 - Güncelleme yaparken `identifier` ve `productName` sabit tutulursa kullanıcı verileri korunur.
+
+## Lisans
+- Bu proje `Freelance Timeboard Non-Commercial License v1.0` ile lisanslanmıştır.
+- Ticari kullanım yasaktır.
+- Ticari kullanım için ayrı yazılı izin/lisans alınmalıdır.
+- Detaylar için [LICENSE](/home/umut/Documents/Projects/freelance-timeboard/LICENSE) dosyasına bakın.
