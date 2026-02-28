@@ -35,7 +35,7 @@ const state = {
 const I18N = {
   tr: {
     appOpenError: "Uygulama açılamadı",
-    heading: "Günlük takip, performans analizi, tek panel",
+    heading: "Günlük takip, performans analizi",
     dashboard: "Panel",
     analysis: "Analiz",
     exportCsv: "CSV Dışa Aktar",
@@ -53,14 +53,18 @@ const I18N = {
     cumulativeIncomeTry: "Kümülatif Gelir (TL)",
     monthHours: "Bu Ay Saat",
     weekHours: "Bu Hafta Saat",
+    weekIncome: "Bu Hafta Gelir",
+    monthIncome: "Bu Ay Gelir",
     previousMonth: "Önceki ay",
     previousWeek: "Önceki hafta",
     weeklyTarget: "Haftalık Hedef",
     monthlyTarget: "Aylık Hedef",
-    weeklyHoursLast8: "Haftalık Saat (Bu Hafta: Pzt-Paz)",
+    weeklyHoursLast8: "Haftalık Saat (Bu Hafta)",
     monthlyHoursLast6: "Aylık Saat (Son 6 Ay)",
-    dailyRolling: "Günlük Saat ve Rolling 10g Ortalama",
+    dailyRolling: "Günlük Saat ve 10g Ortalama",
     heatmap20: "Gün Bazlı Heatmap (Son 20 Hafta)",
+    weekdayProductivity: "Hafta Günü Verim Matrisi",
+    avgHours: "Ort. Saat",
     cycleHistogram: "Cycles Histogram ($)",
     editRecord: "Kaydı Düzenle",
     dailyEntry: "Günlük Veri Girişi",
@@ -110,7 +114,7 @@ const I18N = {
     xAxis: "X Ekseni",
     yAxis: "Y Ekseni",
     dailyHoursLabel: "Günlük Saat",
-    rollingAvgLabel: "Rolling 10g Ortalama",
+    rollingAvgLabel: "10g Ortalama",
     monday: "Pzt",
     tuesday: "Sal",
     wednesday: "Çar",
@@ -141,6 +145,10 @@ const I18N = {
     noExpenseData: "Henüz gider verisi yok.",
     exportSuccess: "Dosya kaydedildi: {path}",
     exportFailed: "CSV dışa aktarım başarısız oldu.",
+    targetVarianceChart: "Hedef Sapma Grafiği (Saat)",
+    cashflowWaterfall: "Aylık Cashflow Waterfall",
+    startNet: "Başlangıç Net",
+    endNet: "Bitiş Net",
     budgetTrend: "Gelir - Gider - Net Trend",
     cumulativeNet: "Kümülatif Net Bakiye",
     budgetRange: "Aralık",
@@ -158,7 +166,7 @@ const I18N = {
   },
   en: {
     appOpenError: "Application failed to start",
-    heading: "Daily tracking, performance analytics, single panel",
+    heading: "Daily tracking, performance analytics",
     dashboard: "Dashboard",
     analysis: "Analysis",
     exportCsv: "Export CSV",
@@ -176,14 +184,18 @@ const I18N = {
     cumulativeIncomeTry: "Cumulative Income (TRY)",
     monthHours: "This Month Hours",
     weekHours: "This Week Hours",
+    weekIncome: "This Week Income",
+    monthIncome: "This Month Income",
     previousMonth: "Previous month",
     previousWeek: "Previous week",
     weeklyTarget: "Weekly Target",
     monthlyTarget: "Monthly Target",
-    weeklyHoursLast8: "Weekly Hours (This Week: Mon-Sun)",
+    weeklyHoursLast8: "Weekly Hours (This Week)",
     monthlyHoursLast6: "Monthly Hours (Last 6 Months)",
-    dailyRolling: "Daily Hours and Rolling 10d Avg",
+    dailyRolling: "Daily Hours and 10d Avg",
     heatmap20: "Day-based Heatmap (Last 20 Weeks)",
+    weekdayProductivity: "Weekday Productivity Matrix",
+    avgHours: "Avg Hours",
     cycleHistogram: "Histogram of Cycles ($)",
     editRecord: "Edit Record",
     dailyEntry: "Daily Entry",
@@ -233,7 +245,7 @@ const I18N = {
     xAxis: "X Axis",
     yAxis: "Y Axis",
     dailyHoursLabel: "Daily Hours",
-    rollingAvgLabel: "Rolling 10d Avg",
+    rollingAvgLabel: "10d Avg",
     monday: "Mon",
     tuesday: "Tue",
     wednesday: "Wed",
@@ -264,6 +276,10 @@ const I18N = {
     noExpenseData: "No expense data yet.",
     exportSuccess: "File saved: {path}",
     exportFailed: "CSV export failed.",
+    targetVarianceChart: "Target Variance Chart (Hours)",
+    cashflowWaterfall: "Monthly Cashflow Waterfall",
+    startNet: "Start Net",
+    endNet: "End Net",
     budgetTrend: "Income - Expense - Net Trend",
     cumulativeNet: "Cumulative Net Balance",
     budgetRange: "Range",
@@ -504,7 +520,7 @@ function mapRawSettings(raw) {
 
 function renderApp() {
   const rowsDesc = deriveRows(state.logs, state.settings);
-  const dashboard = deriveDashboard(rowsDesc, state.settings);
+  const dashboard = deriveDashboard(rowsDesc, state.settings, state.expenses);
   const budget = deriveBudget(rowsDesc, state.expenses, state.settings, state.budgetView);
 
   const app = document.getElementById("app");
@@ -512,7 +528,7 @@ function renderApp() {
     <div class="shell">
       <header class="hero">
         <div>
-          <p class="eyebrow">Freelance Work Tracker</p>
+          <p class="eyebrow">Work, Expense, Investment, and Trade Tracker</p>
           <h1>${t("heading")}</h1>
         </div>
         <div class="hero-actions">
@@ -547,26 +563,50 @@ function renderApp() {
           <h3>${t("dailyRolling")}</h3>
           ${rollingChartSvg(dashboard.rollingSeries)}
         </article>
-        <article class="card full-viz">
+        <article class="card">
           <h3>${t("heatmap20")}</h3>
           ${heatmapHtml(dashboard.heatmap)}
+        </article>
+        <article class="card">
+          <h3>${t("weekdayProductivity")}</h3>
+          ${weekdayProductivityHtml(dashboard.weekdayProductivity)}
         </article>
       </section>
       </div>
 
       <div class="panel ${state.activeTab === "analysis" ? "" : "hidden"}" data-panel="analysis">
-      <section class="kpi-grid">
+      <section class="kpi-grid analysis-kpi-grid">
+        <article class="card">
+          <h3>${t("weekHours")}</h3>
+          <p>${fmtHours(dashboard.weekHours)}</p>
+          <small class="muted">${t("previousWeek")}: ${fmtHours(dashboard.prevWeekHours)} (${fmtDelta(dashboard.weekDeltaPct)})</small>
+        </article>
+        <article class="card">
+          <h3>${t("monthHours")}</h3>
+          <p>${fmtHours(dashboard.monthHours)}</p>
+          <small class="muted">${t("previousMonth")}: ${fmtHours(dashboard.prevMonthHours)} (${fmtDelta(dashboard.monthDeltaPct)})</small>
+        </article>
         <article class="card">
           <h3>${t("totalHours")}</h3>
           <p>${fmtHours(dashboard.totalHours)}</p>
         </article>
+      </section>
+
+      <section class="kpi-grid analysis-kpi-grid analysis-income-grid">
         <article class="card">
-          <h3>${t("cumulativeIncome")}</h3>
-          <p>${fmtMoney(dashboard.totalUsd)}</p>
+          <h3>${t("weekIncome")}</h3>
+          <p>${fmtMoney(dashboard.weekUsd)}</p>
+          <small class="muted">${fmtTry(dashboard.weekTry)}</small>
+        </article>
+        <article class="card">
+          <h3>${t("monthIncome")}</h3>
+          <p>${fmtMoney(dashboard.monthUsd)}</p>
+          <small class="muted">${fmtTry(dashboard.monthTry)}</small>
         </article>
         <article class="card tl-income-card">
-          <h3>${t("cumulativeIncomeTry")}</h3>
-          <p>${fmtTry(dashboard.totalTry)}</p>
+          <h3>${t("cumulativeIncome")}</h3>
+          <p>${fmtMoney(dashboard.totalUsd)}</p>
+          <small class="muted">${fmtTry(dashboard.totalTry)}</small>
           <button
             id="refresh-usd-try-card"
             class="btn ghost icon-btn card-refresh-btn"
@@ -575,16 +615,6 @@ function renderApp() {
           >
             ${refreshIcon()}
           </button>
-        </article>
-        <article class="card">
-          <h3>${t("monthHours")}</h3>
-          <p>${fmtHours(dashboard.monthHours)}</p>
-          <small class="muted">${t("previousMonth")}: ${fmtHours(dashboard.prevMonthHours)} (${fmtDelta(dashboard.monthDeltaPct)})</small>
-        </article>
-        <article class="card">
-          <h3>${t("weekHours")}</h3>
-          <p>${fmtHours(dashboard.weekHours)}</p>
-          <small class="muted">${t("previousWeek")}: ${fmtHours(dashboard.prevWeekHours)} (${fmtDelta(dashboard.weekDeltaPct)})</small>
         </article>
       </section>
 
@@ -607,6 +637,19 @@ function renderApp() {
           ${cycleHistogramSvg(dashboard.cycleHistogramSeries)}
         </article>
       </section>
+
+      <!--
+      <section class="viz-grid analysis-viz-grid">
+        <article class="card">
+          <h3>${t("targetVarianceChart")}</h3>
+          ${targetVarianceChartSvg(dashboard.targetVarianceSeries)}
+        </article>
+        <article class="card">
+          <h3>${t("cashflowWaterfall")} (${dashboard.waterfall.monthLabel})</h3>
+          ${cashflowWaterfallSvg(dashboard.waterfall)}
+        </article>
+      </section>
+      -->
       </div>
 
       <div class="panel ${state.activeTab === "income" ? "" : "hidden"}" data-panel="income">
@@ -872,12 +915,30 @@ function bindEvents(rowsDesc) {
   const langToggle = document.getElementById("lang-toggle");
   const refreshUsdTryBtn = document.getElementById("refresh-usd-try");
   const refreshUsdTryCardBtn = document.getElementById("refresh-usd-try-card");
+  const budgetRange = document.getElementById("budget-range");
+  const budgetGranularity = document.getElementById("budget-granularity");
+  const budgetCurrency = document.getElementById("budget-currency");
 
   document.querySelectorAll(".tab[data-tab]").forEach((tabBtn) => {
     tabBtn.addEventListener("click", () => {
       state.activeTab = tabBtn.getAttribute("data-tab") || "dashboard";
       renderApp();
     });
+  });
+
+  budgetRange?.addEventListener("change", () => {
+    state.budgetView.range = budgetRange.value;
+    renderApp();
+  });
+
+  budgetGranularity?.addEventListener("change", () => {
+    state.budgetView.granularity = budgetGranularity.value;
+    renderApp();
+  });
+
+  budgetCurrency?.addEventListener("change", () => {
+    state.budgetView.currency = budgetCurrency.value === "USD" ? "USD" : "TRY";
+    renderApp();
   });
 
   rateMode?.addEventListener("change", () => {
@@ -1223,7 +1284,7 @@ function deriveRows(logs, settings) {
   return derivedAsc.reverse();
 }
 
-function deriveDashboard(rowsDesc, settings) {
+function deriveDashboard(rowsDesc, settings, expenses = []) {
   const totalHours = rowsDesc.reduce((s, r) => s + r.hours, 0);
   const totalUsd = rowsDesc[0]?.cumulativeUsd || 0;
   const totalTry = totalUsd * (Number(settings.usdTry) || 0);
@@ -1238,10 +1299,12 @@ function deriveDashboard(rowsDesc, settings) {
   const currentWeekKey = weekKey(latestDate || todayIso());
   const prevWeekKey = weekKey(shiftDate(currentWeekKey, -7));
   const weekHours = weekMap.get(currentWeekKey)?.hours || 0;
+  const weekUsd = weekMap.get(currentWeekKey)?.income || 0;
   const prevWeekHours = weekMap.get(prevWeekKey)?.hours || 0;
 
   const currentMonthKey = activeMonth;
   const prevMonthKey = shiftMonth(activeMonth, -1);
+  const monthUsd = monthMap.get(currentMonthKey)?.income || 0;
   const prevMonthHours = monthMap.get(prevMonthKey)?.hours || 0;
 
   const weeklySeries = buildCurrentWeekSeries(rowsDesc);
@@ -1258,6 +1321,11 @@ function deriveDashboard(rowsDesc, settings) {
   const weekGoalPct = toPercent(weekHours, settings.weeklyTargetHours);
   const monthGoalPct = toPercent(monthHours, settings.monthlyTargetHours);
   const cycleHistogramSeries = buildCycleHistogramSeries(rowsDesc);
+  const targetVarianceSeries = [
+    { label: t("weeklyTarget"), value: round(weekHours - Number(settings.weeklyTargetHours || 0), 2) },
+    { label: t("monthlyTarget"), value: round(monthHours - Number(settings.monthlyTargetHours || 0), 2) }
+  ];
+  const waterfall = buildMonthlyWaterfall(rowsDesc, expenses, settings, activeMonth);
 
   return {
     totalHours: round(totalHours, 2),
@@ -1267,16 +1335,23 @@ function deriveDashboard(rowsDesc, settings) {
     latest10dAvg: round(latest10dAvg, 2),
     latestDate,
     weekHours: round(weekHours, 2),
+    weekUsd: round(weekUsd, 2),
+    weekTry: round(weekUsd * (Number(settings.usdTry) || 0), 2),
     prevWeekHours: round(prevWeekHours, 2),
     weekDeltaPct: deltaPct(weekHours, prevWeekHours),
+    monthUsd: round(monthUsd, 2),
+    monthTry: round(monthUsd * (Number(settings.usdTry) || 0), 2),
     prevMonthHours: round(prevMonthHours, 2),
     monthDeltaPct: deltaPct(monthHours, prevMonthHours),
     weekGoalPct,
     monthGoalPct,
+    targetVarianceSeries,
+    waterfall,
     weeklySeries,
     monthlySeries,
     rollingSeries,
     heatmap: buildHeatmap(rowsDesc, 20),
+    weekdayProductivity: buildWeekdayProductivity(rowsDesc),
     cycleHistogramSeries
   };
 }
@@ -1364,6 +1439,47 @@ function buildCycleHistogramSeries(rowsDesc) {
   return out;
 }
 
+function buildMonthlyWaterfall(rowsDesc, expenses, settings, activeMonth) {
+  const incomeByMonth = new Map();
+  for (const row of rowsDesc) {
+    const key = row.date.slice(0, 7);
+    incomeByMonth.set(key, (incomeByMonth.get(key) || 0) + (Number(row.dailyUsd) || 0));
+  }
+
+  const usdTry = Number(settings.usdTry) || 1;
+  const expenseByMonth = new Map();
+  for (const expense of expenses || []) {
+    const key = String(expense.date || "").slice(0, 7);
+    if (!key) continue;
+    const amount = Number(expense.amount) || 0;
+    const currency = String(expense.currency || "USD").toUpperCase() === "TRY" ? "TRY" : "USD";
+    const usdAmount = currency === "USD" ? amount : amount / usdTry;
+    expenseByMonth.set(key, (expenseByMonth.get(key) || 0) + usdAmount);
+  }
+
+  const months = [...new Set([...incomeByMonth.keys(), ...expenseByMonth.keys()])].sort();
+  const monthKey = months.includes(activeMonth) ? activeMonth : months[months.length - 1] || activeMonth || todayIso().slice(0, 7);
+
+  let startNet = 0;
+  for (const month of months) {
+    if (month >= monthKey) break;
+    startNet += (incomeByMonth.get(month) || 0) - (expenseByMonth.get(month) || 0);
+  }
+
+  const income = incomeByMonth.get(monthKey) || 0;
+  const expense = expenseByMonth.get(monthKey) || 0;
+  const endNet = startNet + income - expense;
+
+  return {
+    month: monthKey,
+    monthLabel: formatMonthLabel(monthKey),
+    startNet: round(startNet, 2),
+    income: round(income, 2),
+    expense: round(expense, 2),
+    endNet: round(endNet, 2)
+  };
+}
+
 function buildHeatmap(rowsDesc, weekCount) {
   const hoursByDate = new Map(rowsDesc.map((r) => [r.date, r.hours]));
   const end = toDate(todayIso());
@@ -1391,7 +1507,31 @@ function buildHeatmap(rowsDesc, weekCount) {
   };
 }
 
-function deriveBudget(rowsDesc, expenses, settings) {
+function buildWeekdayProductivity(rowsDesc) {
+  const labels = [t("monday"), t("tuesday"), t("wednesday"), t("thursday"), t("friday"), t("saturday"), t("sunday")];
+  const buckets = labels.map((label, idx) => ({ label, dayIndex: idx + 1, totalHours: 0, count: 0 }));
+
+  for (const row of rowsDesc) {
+    const d = toDate(row.date);
+    const day = ((d.getDay() + 6) % 7) + 1; // 1=Mon ... 7=Sun
+    const bucket = buckets[day - 1];
+    bucket.totalHours += Number(row.hours) || 0;
+    bucket.count += 1;
+  }
+
+  const withAvg = buckets.map((b) => ({
+    ...b,
+    avgHours: b.count ? round(b.totalHours / b.count, 2) : 0
+  }));
+
+  const maxAvg = Math.max(...withAvg.map((x) => x.avgHours), 0.01);
+  return withAvg.map((x) => ({
+    ...x,
+    level: x.avgHours <= 0 ? 0 : x.avgHours < maxAvg * 0.25 ? 1 : x.avgHours < maxAvg * 0.5 ? 2 : x.avgHours < maxAvg * 0.75 ? 3 : 4
+  }));
+}
+
+function deriveBudget(rowsDesc, expenses, settings, view = { range: "90d", granularity: "daily" }) {
   const incomeUsd = rowsDesc.reduce((sum, r) => sum + (Number(r.dailyUsd) || 0), 0);
   const incomeTry = rowsDesc.reduce((sum, r) => sum + (Number(r.dailyTry) || 0), 0);
   const usdTry = Number(settings.usdTry) || 1;
@@ -1405,7 +1545,7 @@ function deriveBudget(rowsDesc, expenses, settings) {
       ...x,
       usdAmount: round(usdAmount, 2),
       tryAmount: round(tryAmount, 2),
-      category: String(x.category || "Diğer")
+      category: String(x.category || t("uncategorized"))
     };
   });
 
@@ -1424,6 +1564,9 @@ function deriveBudget(rowsDesc, expenses, settings) {
     .map((c) => ({ ...c, usdAmount: round(c.usdAmount, 2), tryAmount: round(c.tryAmount, 2) }))
     .sort((a, b) => b.tryAmount - a.tryAmount);
 
+  const dailySeries = buildBudgetDailySeries(rowsDesc, normalizedExpenses, view.range);
+  const series = aggregateBudgetSeries(dailySeries, view.granularity);
+
   return {
     incomeUsd: round(incomeUsd, 2),
     incomeTry: round(incomeTry, 2),
@@ -1431,13 +1574,332 @@ function deriveBudget(rowsDesc, expenses, settings) {
     expenseTry: round(expenseTry, 2),
     netUsd: round(incomeUsd - expenseUsd, 2),
     netTry: round(incomeTry - expenseTry, 2),
-    categories
+    categories,
+    series
   };
+}
+
+function buildBudgetDailySeries(rowsDesc, expenses, range = "90d") {
+  const incomeByDate = new Map();
+  const expenseByDate = new Map();
+
+  for (const row of rowsDesc) {
+    const prev = incomeByDate.get(row.date) || { usd: 0, try: 0 };
+    incomeByDate.set(row.date, {
+      usd: prev.usd + (Number(row.dailyUsd) || 0),
+      try: prev.try + (Number(row.dailyTry) || 0)
+    });
+  }
+
+  for (const expense of expenses) {
+    const key = String(expense.date || "");
+    if (!key) continue;
+    const prev = expenseByDate.get(key) || { usd: 0, try: 0 };
+    expenseByDate.set(key, {
+      usd: prev.usd + (Number(expense.usdAmount) || 0),
+      try: prev.try + (Number(expense.tryAmount) || 0)
+    });
+  }
+
+  const allDates = [...incomeByDate.keys(), ...expenseByDate.keys()].sort();
+  if (!allDates.length) return [];
+
+  const end = toDate(allDates[allDates.length - 1]);
+  let start = toDate(allDates[0]);
+
+  if (range === "30d") start = shiftDateObj(end, -29);
+  if (range === "90d") start = shiftDateObj(end, -89);
+  if (range === "ytd") start = new Date(end.getFullYear(), 0, 1);
+
+  const points = [];
+  let d = new Date(start);
+  while (d <= end) {
+    const iso = toIsoDate(d);
+    const income = incomeByDate.get(iso) || { usd: 0, try: 0 };
+    const expense = expenseByDate.get(iso) || { usd: 0, try: 0 };
+    points.push({
+      key: iso,
+      label: iso,
+      incomeUsd: round(income.usd, 2),
+      incomeTry: round(income.try, 2),
+      expenseUsd: round(expense.usd, 2),
+      expenseTry: round(expense.try, 2)
+    });
+    d = shiftDateObj(d, 1);
+  }
+
+  return points;
+}
+
+function aggregateBudgetSeries(points, granularity = "daily") {
+  if (granularity === "daily") {
+    return points.map((p) => ({
+      ...p,
+      netUsd: round(p.incomeUsd - p.expenseUsd, 2),
+      netTry: round(p.incomeTry - p.expenseTry, 2)
+    }));
+  }
+
+  const map = new Map();
+  for (const p of points) {
+    const key = granularity === "weekly" ? weekKey(p.key) : p.key.slice(0, 7);
+    const prev = map.get(key) || { incomeUsd: 0, incomeTry: 0, expenseUsd: 0, expenseTry: 0 };
+    map.set(key, {
+      incomeUsd: prev.incomeUsd + p.incomeUsd,
+      incomeTry: prev.incomeTry + p.incomeTry,
+      expenseUsd: prev.expenseUsd + p.expenseUsd,
+      expenseTry: prev.expenseTry + p.expenseTry
+    });
+  }
+
+  return [...map.entries()].sort(([a], [b]) => a.localeCompare(b)).map(([key, v]) => ({
+    key,
+    label: granularity === "monthly" ? formatMonthLabel(key) : key,
+    incomeUsd: round(v.incomeUsd, 2),
+    incomeTry: round(v.incomeTry, 2),
+    expenseUsd: round(v.expenseUsd, 2),
+    expenseTry: round(v.expenseTry, 2),
+    netUsd: round(v.incomeUsd - v.expenseUsd, 2),
+    netTry: round(v.incomeTry - v.expenseTry, 2)
+  }));
+}
+
+function budgetTrendChartSvg(series, currency = "TRY") {
+  if (!series.length) return `<div class="empty muted">${t("noData")}</div>`;
+
+  const width = 980;
+  const height = 280;
+  const pad = { top: 12, right: 14, bottom: 38, left: 52 };
+  const innerW = width - pad.left - pad.right;
+  const innerH = height - pad.top - pad.bottom;
+  const incomeKey = currency === "USD" ? "incomeUsd" : "incomeTry";
+  const expenseKey = currency === "USD" ? "expenseUsd" : "expenseTry";
+  const cumulativeIncome = [];
+  const cumulativeExpense = [];
+  let runningIncome = 0;
+  let runningExpense = 0;
+  for (const point of series) {
+    runningIncome += Number(point[incomeKey]) || 0;
+    runningExpense += Number(point[expenseKey]) || 0;
+    cumulativeIncome.push(round(runningIncome, 2));
+    cumulativeExpense.push(round(runningExpense, 2));
+  }
+
+  const values = series.flatMap((_, i) => [cumulativeIncome[i], cumulativeExpense[i]]);
+  const min = Math.min(...values, 0);
+  const max = Math.max(...values, 1);
+  const range = max - min || 1;
+  const yStep = range / 4;
+
+  const toPoint = (value, i) => {
+    const x = pad.left + (i / Math.max(1, series.length - 1)) * innerW;
+    const y = pad.top + innerH - ((value - min) / range) * innerH;
+    return `${x.toFixed(1)},${y.toFixed(1)}`;
+  };
+
+  const incomeLine = series.map((_, i) => toPoint(cumulativeIncome[i], i)).join(" ");
+  const expenseLine = series.map((_, i) => toPoint(cumulativeExpense[i], i)).join(" ");
+
+  const grid = [...Array(5)]
+    .map((_, i) => {
+      const v = min + yStep * i;
+      const y = pad.top + innerH - (i / 4) * innerH;
+      const txt = currency === "USD" ? `$${Math.round(v)}` : `₺${Math.round(v)}`;
+      return `<g>
+        <line class="axis-grid" x1="${pad.left}" y1="${y}" x2="${width - pad.right}" y2="${y}" />
+        <text class="axis-y" x="${pad.left - 8}" y="${y + 3}" text-anchor="end">${txt}</text>
+      </g>`;
+    })
+    .join("");
+
+  const startLabel = series[0]?.label || "";
+  const endLabel = series[series.length - 1]?.label || "";
+
+  return `<svg class="chart budget-line-chart" viewBox="0 0 ${width} ${height}" role="img">
+    ${grid}
+    <line class="axis-line" x1="${pad.left}" y1="${pad.top + innerH}" x2="${width - pad.right}" y2="${pad.top + innerH}" />
+    <polyline class="income" points="${incomeLine}" />
+    <polyline class="expense" points="${expenseLine}" />
+    <text class="axis-x" x="${pad.left}" y="${height - 10}" text-anchor="start">${escapeHtml(startLabel)}</text>
+    <text class="axis-x" x="${width - pad.right}" y="${height - 10}" text-anchor="end">${escapeHtml(endLabel)}</text>
+    <g class="chart-legend">
+      <line x1="${pad.left + 6}" y1="${pad.top + 8}" x2="${pad.left + 26}" y2="${pad.top + 8}" class="income" />
+      <text x="${pad.left + 32}" y="${pad.top + 11}">${t("incomeLegend")}</text>
+      <line x1="${pad.left + 140}" y1="${pad.top + 8}" x2="${pad.left + 160}" y2="${pad.top + 8}" class="expense" />
+      <text x="${pad.left + 166}" y="${pad.top + 11}">${t("expenseLegend")}</text>
+    </g>
+  </svg>`;
+}
+
+function budgetCumulativeChartSvg(series, currency = "TRY") {
+  if (!series.length) return `<div class="empty muted">${t("noData")}</div>`;
+
+  const width = 520;
+  const height = 240;
+  const pad = { top: 14, right: 10, bottom: 32, left: 54 };
+  const innerW = width - pad.left - pad.right;
+  const innerH = height - pad.top - pad.bottom;
+  const netKey = currency === "USD" ? "netUsd" : "netTry";
+
+  let acc = 0;
+  const points = series.map((p) => {
+    acc += Number(p[netKey]) || 0;
+    return round(acc, 2);
+  });
+
+  const min = Math.min(...points, 0);
+  const max = Math.max(...points, 1);
+  const range = max - min || 1;
+
+  const toXY = (value, i) => {
+    const x = pad.left + (i / Math.max(1, points.length - 1)) * innerW;
+    const y = pad.top + innerH - ((value - min) / range) * innerH;
+    return [x, y];
+  };
+
+  const line = points.map((v, i) => {
+    const [x, y] = toXY(v, i);
+    return `${x.toFixed(1)},${y.toFixed(1)}`;
+  }).join(" ");
+
+  const [sx] = toXY(points[0], 0);
+  const [ex] = toXY(points[points.length - 1], points.length - 1);
+  const zeroY = pad.top + innerH - ((0 - min) / range) * innerH;
+  const area = `${sx.toFixed(1)},${zeroY.toFixed(1)} ${line} ${ex.toFixed(1)},${zeroY.toFixed(1)}`;
+  const cls = points[points.length - 1] >= 0 ? "positive" : "negative";
+
+  return `<svg class="chart budget-cumulative-chart" viewBox="0 0 ${width} ${height}" role="img">
+    <line class="axis-grid" x1="${pad.left}" y1="${zeroY}" x2="${width - pad.right}" y2="${zeroY}" />
+    <polygon class="area ${cls}" points="${area}" />
+    <polyline class="line ${cls}" points="${line}" />
+  </svg>`;
+}
+
+function budgetDonutSvg(categories, currency = "TRY") {
+  if (!categories.length) return `<div class="empty muted">${t("noData")}</div>`;
+
+  const width = 520;
+  const height = 240;
+  const cx = 112;
+  const cy = 120;
+  const r = 72;
+  const sw = 24;
+  const key = currency === "USD" ? "usdAmount" : "tryAmount";
+  const colors = ["#ff9500", "#3aa7ff", "#ff5f57", "#2ec4b6", "#9b5de5", "#7f8c8d"];
+
+  const sorted = [...categories].sort((a, b) => (b[key] || 0) - (a[key] || 0));
+  const top = sorted.slice(0, 5);
+  const other = sorted.slice(5).reduce((sum, x) => sum + (x[key] || 0), 0);
+  if (other > 0) top.push({ category: t("uncategorized"), usdAmount: other, tryAmount: other });
+  const total = top.reduce((s, c) => s + (c[key] || 0), 0) || 1;
+
+  let a0 = -Math.PI / 2;
+  const segs = top.map((c, i) => {
+    const val = c[key] || 0;
+    const da = (val / total) * Math.PI * 2;
+    const a1 = a0 + da;
+    const x1 = cx + Math.cos(a0) * r;
+    const y1 = cy + Math.sin(a0) * r;
+    const x2 = cx + Math.cos(a1) * r;
+    const y2 = cy + Math.sin(a1) * r;
+    const large = da > Math.PI ? 1 : 0;
+    const d = `M ${x1.toFixed(2)} ${y1.toFixed(2)} A ${r} ${r} 0 ${large} 1 ${x2.toFixed(2)} ${y2.toFixed(2)}`;
+    a0 = a1;
+    return { d, color: colors[i % colors.length], category: c.category, value: val };
+  });
+
+  return `<svg class="chart budget-donut-chart" viewBox="0 0 ${width} ${height}" role="img">
+    <circle cx="${cx}" cy="${cy}" r="${r}" fill="none" stroke="var(--surface-alt)" stroke-width="${sw}" />
+    ${segs.map((s) => `<path d="${s.d}" fill="none" stroke="${s.color}" stroke-width="${sw}" stroke-linecap="round" />`).join("")}
+    <text class="axis-y" x="${cx}" y="${cy - 2}" text-anchor="middle">${currency}</text>
+    <text class="axis-y" x="${cx}" y="${cy + 14}" text-anchor="middle">${Math.round(total).toLocaleString()}</text>
+    ${segs.map((s, i) => `<g><rect x="228" y="${30 + i * 28}" width="10" height="10" rx="2" fill="${s.color}" /><text class="axis-x" x="244" y="${39 + i * 28}">${escapeHtml(s.category)} (${Math.round((s.value / total) * 100)}%)</text></g>`).join("")}
+  </svg>`;
+}
+
+function targetVarianceChartSvg(series) {
+  if (!series.length) return `<div class="empty muted">${t("noData")}</div>`;
+
+  const width = 520;
+  const height = 240;
+  const pad = { top: 14, right: 10, bottom: 38, left: 44 };
+  const innerW = width - pad.left - pad.right;
+  const innerH = height - pad.top - pad.bottom;
+  const maxAbs = Math.max(1, ...series.map((s) => Math.abs(s.value)));
+  const barW = Math.min(90, innerW / Math.max(1, series.length) - 22);
+  const zeroY = pad.top + innerH / 2;
+
+  const bars = series.map((s, i) => {
+    const x = pad.left + (i + 0.5) * (innerW / series.length) - barW / 2;
+    const h = Math.max(2, Math.abs(s.value / maxAbs) * (innerH / 2));
+    const y = s.value >= 0 ? zeroY - h : zeroY;
+    const cls = s.value >= 0 ? "pos" : "neg";
+    const sign = s.value > 0 ? "+" : "";
+    return `<g>
+      <rect class="variance-bar ${cls}" x="${x}" y="${y}" width="${barW}" height="${h}" rx="6" />
+      <text class="axis-x" x="${x + barW / 2}" y="${height - 12}" text-anchor="middle">${escapeHtml(s.label)}</text>
+      <text class="axis-y" x="${x + barW / 2}" y="${y - 6}" text-anchor="middle">${sign}${s.value.toFixed(1)}h</text>
+    </g>`;
+  }).join("");
+
+  return `<svg class="chart target-variance-chart" viewBox="0 0 ${width} ${height}" role="img">
+    <line class="axis-grid" x1="${pad.left}" y1="${zeroY}" x2="${width - pad.right}" y2="${zeroY}" />
+    ${bars}
+  </svg>`;
+}
+
+function cashflowWaterfallSvg(data) {
+  if (!data) return `<div class="empty muted">${t("noData")}</div>`;
+
+  const steps = [
+    { label: t("startNet"), value: data.startNet, base: 0, cls: "net" },
+    { label: t("incomeLegend"), value: data.income, base: data.startNet, cls: "inc" },
+    { label: t("expenseLegend"), value: -data.expense, base: data.startNet + data.income, cls: "exp" },
+    { label: t("endNet"), value: data.endNet, base: 0, cls: "net" }
+  ];
+
+  const width = 520;
+  const height = 240;
+  const pad = { top: 14, right: 10, bottom: 38, left: 56 };
+  const innerW = width - pad.left - pad.right;
+  const innerH = height - pad.top - pad.bottom;
+  const vals = steps.flatMap((s) => [s.base, s.base + s.value]);
+  const min = Math.min(...vals, 0);
+  const max = Math.max(...vals, 1);
+  const range = max - min || 1;
+  const stepW = innerW / steps.length;
+  const barW = Math.min(72, stepW - 18);
+  const toY = (v) => pad.top + innerH - ((v - min) / range) * innerH;
+
+  const bars = steps.map((s, i) => {
+    const x = pad.left + i * stepW + (stepW - barW) / 2;
+    const y1 = s.cls === "net" ? toY(0) : toY(s.base);
+    const y2 = s.cls === "net" ? toY(s.value) : toY(s.base + s.value);
+    const y = Math.min(y1, y2);
+    const h = Math.max(2, Math.abs(y1 - y2));
+    const labelValue = s.cls === "exp" ? `-$${Math.abs(s.value).toFixed(0)}` : `$${Math.abs(s.value).toFixed(0)}`;
+    return `<g>
+      <rect class="waterfall-bar ${s.cls}" x="${x}" y="${y}" width="${barW}" height="${h}" rx="6" />
+      <text class="axis-x" x="${x + barW / 2}" y="${height - 12}" text-anchor="middle">${escapeHtml(s.label)}</text>
+      <text class="axis-y" x="${x + barW / 2}" y="${y - 6}" text-anchor="middle">${labelValue}</text>
+    </g>`;
+  }).join("");
+
+  return `<svg class="chart cashflow-waterfall" viewBox="0 0 ${width} ${height}" role="img">
+    <line class="axis-grid" x1="${pad.left}" y1="${toY(0)}" x2="${width - pad.right}" y2="${toY(0)}" />
+    ${bars}
+  </svg>`;
+}
+
+function fmtCurrency(entry, currency = "TRY") {
+  if (currency === "USD") return fmtMoney(entry.usdAmount);
+  return fmtTry(entry.tryAmount);
 }
 
 function progressBar(pct) {
   const safe = Math.max(0, Math.min(100, pct));
-  return `<div class="progress"><span style="width:${safe.toFixed(1)}%"></span><b>${safe.toFixed(1)}%</b></div>`;
+  const over50 = safe > 50 ? " over-50" : "";
+  return `<div class="progress${over50}"><span style="width:${safe.toFixed(1)}%"></span><b>${safe.toFixed(1)}%</b></div>`;
 }
 
 function barChartSvg(series) {
@@ -1613,6 +2075,17 @@ function heatmapHtml(data) {
         )
         .join("")}
     </div>
+  </div>`;
+}
+
+function weekdayProductivityHtml(data) {
+  if (!data?.length) return `<div class="empty muted">${t("noData")}</div>`;
+
+  return `<div class="weekday-matrix">
+    <div class="wm-cell wm-left-head"></div>
+    ${data.map((d) => `<div class="wm-cell wm-day-head">${escapeHtml(d.label)}</div>`).join("")}
+    <div class="wm-cell wm-avg-label">${t("avgHours")}</div>
+    ${data.map((d) => `<div class="wm-cell wm-value l${d.level}"><b>${d.avgHours.toFixed(2)}h</b></div>`).join("")}
   </div>`;
 }
 
@@ -1990,21 +2463,29 @@ function downloadFile(content, filename, type) {
 }
 
 function fmtHours(value) {
-  return `${round(Number(value) || 0, 2).toFixed(2)} h`;
+  return `${fmtNumber(value, 2)} h`;
 }
 
 function fmtMoney(value) {
-  return `$${round(Number(value) || 0, 2).toFixed(2)}`;
+  return `$${fmtNumber(value, 2)}`;
 }
 
 function fmtTry(value) {
-  return `₺${round(Number(value) || 0, 2).toFixed(2)}`;
+  return `₺${fmtNumber(value, 2)}`;
 }
 
 function fmtDelta(pct) {
   if (!Number.isFinite(pct)) return "n/a";
   const sign = pct > 0 ? "+" : "";
   return `${sign}${pct.toFixed(1)}%`;
+}
+
+function fmtNumber(value, digits = 2) {
+  const n = Number(value) || 0;
+  return new Intl.NumberFormat("en-US", {
+    minimumFractionDigits: digits,
+    maximumFractionDigits: digits
+  }).format(round(n, digits));
 }
 
 function csvCell(value) {

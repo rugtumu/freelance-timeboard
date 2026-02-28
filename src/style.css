@@ -34,6 +34,20 @@
   box-sizing: border-box;
 }
 
+.shell,
+.shell * {
+  -webkit-user-select: none;
+  user-select: none;
+}
+
+input,
+textarea,
+select,
+option {
+  -webkit-user-select: text;
+  user-select: text;
+}
+
 body {
   min-height: 100vh;
   margin: 0;
@@ -141,6 +155,14 @@ body {
   gap: 0.8rem;
 }
 
+.analysis-kpi-grid {
+  grid-template-columns: repeat(3, minmax(180px, 1fr));
+}
+
+.analysis-income-grid {
+  margin-top: 0.8rem;
+}
+
 .goal-grid {
   margin-top: 0.8rem;
   display: grid;
@@ -178,6 +200,11 @@ body {
   text-align: center;
   font-size: 0.74rem;
   line-height: 22px;
+  color: #ffffff;
+}
+
+[data-theme="dark"] .progress.over-50 b {
+  color: #0a0a0a;
 }
 
 .viz-grid {
@@ -562,6 +589,10 @@ thead th {
     grid-template-columns: 1fr;
   }
 
+  .budget-controls {
+    grid-template-columns: 1fr;
+  }
+
   .hero {
     align-items: flex-start;
     flex-direction: column;
@@ -593,4 +624,128 @@ thead th {
   color: var(--muted);
   font-family: "IBM Plex Mono", monospace;
   font-size: 0.8rem;
+}
+
+.weekday-matrix {
+  display: grid;
+  grid-template-columns: 74px repeat(7, minmax(0, 1fr));
+  gap: 0.45rem;
+}
+
+.wm-cell {
+  align-items: center;
+  justify-content: center;
+  display: flex;
+}
+
+.wm-day-head {
+  font-size: 0.74rem;
+  color: var(--muted);
+  font-family: "IBM Plex Mono", monospace;
+}
+
+.wm-avg-label {
+  font-size: 0.74rem;
+  color: var(--muted);
+  justify-content: flex-start;
+  font-family: "IBM Plex Mono", monospace;
+}
+
+.wm-value {
+  height: 24px;
+  width: 100%;
+  border-radius: 8px;
+  border: 1px solid var(--line);
+  justify-content: center;
+  background: var(--surface-alt);
+}
+
+.wm-value b {
+  font-size: 0.74rem;
+  font-family: "IBM Plex Mono", monospace;
+}
+
+.wm-value.l1 { background: rgba(61, 111, 91, 0.38); }
+.wm-value.l2 { background: rgba(77, 142, 115, 0.42); }
+.wm-value.l3 { background: rgba(99, 176, 141, 0.48); }
+.wm-value.l4 { background: rgba(132, 216, 176, 0.58); }
+
+.budget-controls-card {
+  margin-bottom: 0.8rem;
+}
+
+.budget-controls {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(140px, 1fr));
+  gap: 0.7rem;
+}
+
+.budget-viz-grid {
+  margin-top: 0.8rem;
+}
+
+.budget-line-chart polyline {
+  fill: none;
+  stroke-width: 3;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+
+.budget-line-chart .income,
+.chart-legend .income {
+  stroke: #2ec4b6;
+}
+
+.budget-line-chart .expense,
+.chart-legend .expense {
+  stroke: #ff5f57;
+}
+
+.budget-line-chart .net,
+.chart-legend .net {
+  stroke: #3aa7ff;
+}
+
+.budget-cumulative-chart .area.positive {
+  fill: rgba(46, 196, 182, 0.18);
+}
+
+.budget-cumulative-chart .line.positive {
+  fill: none;
+  stroke: #2ec4b6;
+  stroke-width: 3;
+}
+
+.budget-cumulative-chart .area.negative {
+  fill: rgba(255, 95, 87, 0.18);
+}
+
+.budget-cumulative-chart .line.negative {
+  fill: none;
+  stroke: #ff5f57;
+  stroke-width: 3;
+}
+
+.analysis-viz-grid {
+  margin-top: 0.8rem;
+}
+
+.target-variance-chart .variance-bar.pos {
+  fill: #2ec4b6;
+}
+
+.target-variance-chart .variance-bar.neg {
+  fill: #ff5f57;
+}
+
+.cashflow-waterfall .waterfall-bar.net {
+  fill: #3aa7ff;
+}
+
+.cashflow-waterfall .waterfall-bar.inc {
+  fill: #2ec4b6;
+}
+
+.cashflow-waterfall .waterfall-bar.exp {
+  fill: #ff5f57;
 }
