@@ -1,6 +1,6 @@
 [package]
 name = "freelance-timeboard"
-version = "0.1.2"
+version = "0.1.3"
 description = "Freelance work hour and earnings tracker"
 authors = ["umut"]
 license = "MIT"
