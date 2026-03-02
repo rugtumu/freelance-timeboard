@@ -149,6 +149,25 @@ body {
   display: block;
 }
 
+.app-footer {
+  margin-top: 1.1rem;
+  padding: 0.2rem 0.1rem 0.4rem;
+  text-align: center;
+  font-size: 0.78rem;
+  color: var(--muted);
+}
+
+.app-footer a {
+  color: var(--text);
+  text-decoration: none;
+  border-bottom: 1px solid var(--line);
+}
+
+.app-footer a:hover {
+  color: var(--primary);
+  border-bottom-color: var(--primary);
+}
+
 .kpi-grid {
   display: grid;
   grid-template-columns: repeat(5, minmax(140px, 1fr));
@@ -626,49 +645,71 @@ thead th {
   font-size: 0.8rem;
 }
 
-.weekday-matrix {
+.weekday-bars {
   display: grid;
-  grid-template-columns: 74px repeat(7, minmax(0, 1fr));
-  gap: 0.45rem;
+  grid-template-columns: repeat(7, minmax(0, 1fr));
+  gap: 4px;
+  align-items: end;
+  max-height: 124px;
+  min-height: 124px;
 }
 
-.wm-cell {
-  align-items: center;
-  justify-content: center;
-  display: flex;
+.wb-col {
+  display: grid;
+  grid-template-rows: 1fr 12px;
+  gap: 3px;
+  align-items: end;
+  justify-items: stretch;
+  min-height: 0;
 }
 
-.wm-day-head {
-  font-size: 0.74rem;
+.wb-day {
+  font-size: 0.62rem;
   color: var(--muted);
   font-family: "IBM Plex Mono", monospace;
+  line-height: 1;
+  white-space: nowrap;
+  text-align: center;
 }
 
-.wm-avg-label {
-  font-size: 0.74rem;
-  color: var(--muted);
-  justify-content: flex-start;
-  font-family: "IBM Plex Mono", monospace;
-}
-
-.wm-value {
-  height: 24px;
-  width: 100%;
-  border-radius: 8px;
+.wb-track {
+  position: relative;
+  height: 100%;
+  min-height: 108px;
+  border-radius: 10px;
   border: 1px solid var(--line);
-  justify-content: center;
   background: var(--surface-alt);
+  overflow: hidden;
 }
 
-.wm-value b {
-  font-size: 0.74rem;
+.wb-fill {
+  position: absolute;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  display: block;
+  width: 100%;
+  border-radius: 8px 8px 0 0;
+  min-height: 18px;
+}
+
+.wb-fill-label {
+  position: absolute;
+  top: 3px;
+  left: 50%;
+  transform: translateX(-50%);
+  font-size: 0.58rem;
+  line-height: 1;
   font-family: "IBM Plex Mono", monospace;
+  color: rgba(255, 255, 255, 0.95);
+  pointer-events: none;
 }
 
-.wm-value.l1 { background: rgba(61, 111, 91, 0.38); }
-.wm-value.l2 { background: rgba(77, 142, 115, 0.42); }
-.wm-value.l3 { background: rgba(99, 176, 141, 0.48); }
-.wm-value.l4 { background: rgba(132, 216, 176, 0.58); }
+.wb-fill.l1 { background: rgba(61, 111, 91, 0.5); }
+.wb-fill.l2 { background: rgba(77, 142, 115, 0.62); }
+.wb-fill.l3 { background: rgba(99, 176, 141, 0.75); }
+.wb-fill.l4 { background: rgba(132, 216, 176, 0.9); }
+.wb-fill.l-1 { background: rgba(132, 216, 176, 0.22); }
 
 .budget-controls-card {
   margin-bottom: 0.8rem;

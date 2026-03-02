@@ -1,6 +1,8 @@
 import "./style.css";
 import { invoke } from "@tauri-apps/api/core";
 
+const APP_VERSION = typeof __APP_VERSION__ !== "undefined" ? __APP_VERSION__ : "dev";
+
 const STORAGE_KEYS = {
   logs: "work_tracker_logs_v1",
   expenses: "work_tracker_expenses_v1",
@@ -63,7 +65,7 @@ const I18N = {
     monthlyHoursLast6: "Aylık Saat (Son 6 Ay)",
     dailyRolling: "Günlük Saat ve 10g Ortalama",
     heatmap20: "Gün Bazlı Heatmap (Son 20 Hafta)",
-    weekdayProductivity: "Hafta Günü Verim Matrisi",
+    weekdayProductivity: "Hafta Günü Verim Bar Grafiği",
     avgHours: "Ort. Saat",
     cycleHistogram: "Cycles Histogram ($)",
     editRecord: "Kaydı Düzenle",
@@ -194,7 +196,7 @@ const I18N = {
     monthlyHoursLast6: "Monthly Hours (Last 6 Months)",
     dailyRolling: "Daily Hours and 10d Avg",
     heatmap20: "Day-based Heatmap (Last 20 Weeks)",
-    weekdayProductivity: "Weekday Productivity Matrix",
+    weekdayProductivity: "Weekday Productivity Bars",
     avgHours: "Avg Hours",
     cycleHistogram: "Histogram of Cycles ($)",
     editRecord: "Edit Record",
@@ -422,7 +424,7 @@ bootstrap().catch((error) => {
   console.error("Bootstrap failed:", error);
   const app = document.getElementById("app");
   if (app) {
-    app.innerHTML = `<div class="shell"><section class="card"><h2>${t("appOpenError")}</h2><p class="muted">${escapeHtml(String(error))}</p></section></div>`;
+    app.innerHTML = `<div class="shell"><section class="card"><h2>${t("appOpenError")}</h2><p class="muted">${escapeHtml(String(error))}</p></section><footer class="app-footer">${appFooterHtml()}</footer></div>`;
   }
 });
 
@@ -528,7 +530,7 @@ function renderApp() {
     <div class="shell">
       <header class="hero">
         <div>
-          <p class="eyebrow">Work, Expense, Investment, and Trade Tracker</p>
+          <p class="eyebrow">Work, Expense, and Investment Tracker</p>
           <h1>${t("heading")}</h1>
         </div>
         <div class="hero-actions">
@@ -894,12 +896,18 @@ function renderApp() {
         ${budget.categories.length ? `<div class="budget-list">${budget.categories.map((c) => `<div class="budget-item"><b>${escapeHtml(c.category)}</b><span>${fmtCurrency(c, state.budgetView.currency)} (${fmtCurrency(c, state.budgetView.currency === "TRY" ? "USD" : "TRY")})</span></div>`).join("")}</div>` : `<p class="muted">${t("noExpenseData")}</p>`}
       </section>
       </div>
+
+      <footer class="app-footer">${appFooterHtml()}</footer>
     </div>
   
 `;
 
   bindEvents(rowsDesc);
   initializeForm();
+}
+
+function appFooterHtml() {
+  return `Created by <a href="https://github.com/rugtumu" target="_blank" rel="noopener noreferrer">@rugtumu</a> · v${escapeHtml(APP_VERSION)}`;
 }
 
 function bindEvents(rowsDesc) {
@@ -2081,11 +2089,21 @@ function heatmapHtml(data) {
 function weekdayProductivityHtml(data) {
   if (!data?.length) return `<div class="empty muted">${t("noData")}</div>`;
 
-  return `<div class="weekday-matrix">
-    <div class="wm-cell wm-left-head"></div>
-    ${data.map((d) => `<div class="wm-cell wm-day-head">${escapeHtml(d.label)}</div>`).join("")}
-    <div class="wm-cell wm-avg-label">${t("avgHours")}</div>
-    ${data.map((d) => `<div class="wm-cell wm-value l${d.level}"><b>${d.avgHours.toFixed(2)}h</b></div>`).join("")}
+  const maxAvg = Math.max(...data.map((d) => d.avgHours), 0.01);
+  return `<div class="weekday-bars">
+    ${data
+      .map((d) => {
+        const heightPct = Math.max(6, (d.avgHours / maxAvg) * 100);
+        return `<div class="wb-col">
+          <div class="wb-track">
+            <span class="wb-fill l${d.level}" style="height:${heightPct.toFixed(1)}%" title="${escapeHtml(d.label)}: ${d.avgHours.toFixed(2)}h">
+              <span class="wb-fill-label">${d.avgHours.toFixed(2)}h</span>
+            </span>
+          </div>
+          <span class="wb-day">${escapeHtml(d.label)}</span>
+        </div>`;
+      })
+      .join("")}
   </div>`;
 }
 
