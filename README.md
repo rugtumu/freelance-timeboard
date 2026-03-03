@@ -49,4 +49,4 @@ Günlük çalışma, gelir/gider, investment/trade takibi uygulaması.
 - Bu proje `Freelance Timeboard Non-Commercial License v1.0` ile lisanslanmıştır.
 - Ticari kullanım yasaktır.
 - Ticari kullanım için ayrı yazılı izin/lisans alınmalıdır.
-- Detaylar için [LICENSE](/home/umut/Documents/Projects/freelance-timeboard/LICENSE) dosyasına bakın.
+- Detaylar için [LICENSE](/LICENSE) dosyasına bakın.
