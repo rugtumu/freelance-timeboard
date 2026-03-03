@@ -31,6 +31,14 @@ Thumbs.db
 *.db
 *.sqlite
 *.sqlite3
+*.db-wal
+*.db-shm
+
+# User exports (generated)
+work-logs-*.csv
+work-logs-*.json
+expenses-*.csv
+expenses-*.json
 
 # Personal sample data
 Work Hours.xlsx
