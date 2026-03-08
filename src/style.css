@@ -226,6 +226,14 @@ body {
   color: #0a0a0a;
 }
 
+[data-theme="light"] .progress b {
+  color: #0a0a0a;
+}
+
+[data-theme="light"] .progress.over-50 b {
+  color: #ffffff;
+}
+
 .viz-grid {
   margin-top: 0.8rem;
   display: grid;
@@ -449,6 +457,119 @@ body {
   gap: 0.8rem;
 }
 
+.clocklead-layout {
+  grid-template-columns: repeat(2, minmax(240px, 1fr));
+}
+
+.clocklead-ratio {
+  font-size: 1rem;
+  margin: 0 0 1.05rem;
+  display: flex;
+  align-items: center;
+  gap: 0.65rem;
+}
+
+.clocklead-ratio b {
+  font-family: "IBM Plex Mono", monospace;
+}
+
+.clocklead-ratio .risk-badge {
+  margin-left: auto;
+}
+
+.clocklead-ranges-title {
+  margin: 0 0 0.95rem;
+}
+
+.clocklead-title-spacer {
+  height: 1.45rem;
+}
+
+.clocklead-ranges {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  display: grid;
+  gap: 0.35rem;
+}
+
+.clocklead-ranges li {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.75rem;
+  font-size: 0.82rem;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  padding: 0.35rem 0.5rem;
+  background: var(--surface-alt);
+}
+
+.clocklead-ranges li b {
+  font-family: "IBM Plex Mono", monospace;
+  font-size: 0.76rem;
+}
+
+.clocklead-ranges li.is-active {
+  border-width: 1px;
+  font-weight: 600;
+}
+
+.clocklead-ranges li.active-safe {
+  background: rgba(95, 208, 143, 0.2);
+  border-color: #72d99e;
+}
+
+.clocklead-ranges li.active-warning {
+  background: rgba(255, 216, 77, 0.2);
+  border-color: #ffe073;
+}
+
+.clocklead-ranges li.active-danger {
+  background: rgba(255, 159, 74, 0.2);
+  border-color: #ffb772;
+}
+
+.clocklead-ranges li.active-critical {
+  background: rgba(255, 101, 101, 0.2);
+  border-color: #ff8787;
+}
+
+.risk-badge {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 999px;
+  padding: 0.32rem 0.72rem;
+  font-size: 0.82rem;
+  font-weight: 600;
+  border: 1px solid transparent;
+}
+
+.risk-safe {
+  color: #0b2a19;
+  background: #5fd08f;
+  border-color: #72d99e;
+}
+
+.risk-warning {
+  color: #332600;
+  background: #ffd84d;
+  border-color: #ffe073;
+}
+
+.risk-danger {
+  color: #3d1d00;
+  background: #ff9f4a;
+  border-color: #ffb772;
+}
+
+.risk-critical {
+  color: #3f0c0c;
+  background: #ff6565;
+  border-color: #ff8787;
+}
+
 .form-grid {
   display: grid;
   grid-template-columns: repeat(2, minmax(120px, 1fr));
@@ -519,7 +640,7 @@ select:focus {
 
 .btn.primary {
   background: var(--primary);
-  color: #fff;
+  color: #0a0a0a;
 }
 
 .btn.primary:hover {

@@ -13,6 +13,8 @@ const DEFAULT_SETTINGS = {
   standardRateUsd: 25,
   specialRateUsd: 28.28125,
   usdTry: 43.88183,
+  clockInHours: 0,
+  leadTimeHours: 0,
   cycleResetRule: "monthly",
   weeklyTargetHours: 35,
   monthlyTargetHours: 140,
@@ -34,12 +36,15 @@ const state = {
   }
 };
 
+let dateDismissHandlerBound = false;
+
 const I18N = {
   tr: {
     appOpenError: "Uygulama açılamadı",
     heading: "Günlük takip, performans analizi",
     dashboard: "Panel",
     analysis: "Analiz",
+    clockLead: "Clock/Lead",
     exportCsv: "CSV Dışa Aktar",
     importCsv: "CSV İçe Aktar",
     toLightTheme: "Açık Tema",
@@ -50,6 +55,22 @@ const I18N = {
     income: "Gelir",
     expense: "Gider",
     budget: "Bütçe",
+    clockLeadTitle: "Clock-in ve Lead Time",
+    clockInTime: "Clock-in Time (saat)",
+    leadTime: "Lead Time (saat)",
+    clockLeadStatusTitle: "Risk Durumu",
+    clockLeadRatio: "Clock/Lead Oranı",
+    clockLeadNoData: "Clock-in ve Lead Time girildiğinde risk hesaplanır.",
+    clockLeadRuleHint: "Eşikler: <1.10 Güvenli, 1.10-1.15 Riskli, 1.15-1.20 Tehlikeli, ≥1.20 Çok Riskli",
+    riskSafe: "Güvenli Bölge",
+    riskWarning: "Riskli Bölge",
+    riskDanger: "Tehlikeli Bölge",
+    riskCritical: "Çok Riskli Bölge",
+    leadRangeHeader: "Lead Time'a Göre Clock-in Saat Aralıkları",
+    riskSafeHours: "Güvenli (< 1.10x)",
+    riskWarningHours: "Riskli (1.10x - 1.15x)",
+    riskDangerHours: "Tehlikeli (1.15x - 1.20x)",
+    riskCriticalHours: "Çok Riskli (>= 1.20x)",
     totalHours: "Toplam Saat",
     cumulativeIncome: "Kümülatif Gelir",
     cumulativeIncomeTry: "Kümülatif Gelir (TL)",
@@ -100,6 +121,7 @@ const I18N = {
     invalidRate: "Geçerli bir saatlik ücret gir.",
     duplicateConfirm: "{date} için kayıt var. Üzerine yazılsın mı?",
     invalidSettings: "Ayar değerleri geçerli olmalı.",
+    invalidClockLead: "Clock-in ve Lead Time 0'dan büyük olmalı.",
     deleteConfirm: "Kayıt silinsin mi?",
     csvInvalid: "CSV parse edilemedi ya da geçerli satır bulunamadı.",
     parsedCount: "{count} kayıt parse edildi.",
@@ -171,6 +193,7 @@ const I18N = {
     heading: "Daily tracking, performance analytics",
     dashboard: "Dashboard",
     analysis: "Analysis",
+    clockLead: "Clock/Lead",
     exportCsv: "Export CSV",
     importCsv: "Import CSV",
     toLightTheme: "Light Theme",
@@ -181,6 +204,22 @@ const I18N = {
     income: "Income",
     expense: "Expense",
     budget: "Budget",
+    clockLeadTitle: "Clock-in and Lead Time",
+    clockInTime: "Clock-in Time (hours)",
+    leadTime: "Lead Time (hours)",
+    clockLeadStatusTitle: "Risk Status",
+    clockLeadRatio: "Clock/Lead Ratio",
+    clockLeadNoData: "Risk appears after entering Clock-in and Lead Time.",
+    clockLeadRuleHint: "Thresholds: <1.10 Safe, 1.10-1.15 Warning, 1.15-1.20 Dangerous, ≥1.20 Critical",
+    riskSafe: "Safe Zone",
+    riskWarning: "Warning Zone",
+    riskDanger: "Danger Zone",
+    riskCritical: "Critical Zone",
+    leadRangeHeader: "Clock-in Hour Ranges by Lead Time",
+    riskSafeHours: "Safe (< 1.10x)",
+    riskWarningHours: "Warning (1.10x - 1.15x)",
+    riskDangerHours: "Danger (1.15x - 1.20x)",
+    riskCriticalHours: "Critical (>= 1.20x)",
     totalHours: "Total Hours",
     cumulativeIncome: "Cumulative Income",
     cumulativeIncomeTry: "Cumulative Income (TRY)",
@@ -231,6 +270,7 @@ const I18N = {
     invalidRate: "Enter a valid hourly rate.",
     duplicateConfirm: "A record exists for {date}. Overwrite it?",
     invalidSettings: "Settings values must be valid.",
+    invalidClockLead: "Clock-in and Lead Time must be greater than 0.",
     deleteConfirm: "Delete this record?",
     csvInvalid: "CSV could not be parsed or no valid rows found.",
     parsedCount: "{count} records parsed.",
@@ -508,10 +548,14 @@ function mapUiExpenseToDb(expense) {
 
 function mapRawSettings(raw) {
   const src = raw && typeof raw === "object" ? raw : {};
+  const clockInHours = toNum(src.clockInHours);
+  const leadTimeHours = toNum(src.leadTimeHours);
   return {
     standardRateUsd: toNum(src.standardRateUsd),
     specialRateUsd: toNum(src.specialRateUsd),
     usdTry: toNum(src.usdTry),
+    clockInHours: Number.isFinite(clockInHours) ? clockInHours : DEFAULT_SETTINGS.clockInHours,
+    leadTimeHours: Number.isFinite(leadTimeHours) ? leadTimeHours : DEFAULT_SETTINGS.leadTimeHours,
     cycleResetRule: src.cycleResetRule || DEFAULT_SETTINGS.cycleResetRule,
     weeklyTargetHours: toNum(src.weeklyTargetHours),
     monthlyTargetHours: toNum(src.monthlyTargetHours),
@@ -524,6 +568,7 @@ function renderApp() {
   const rowsDesc = deriveRows(state.logs, state.settings);
   const dashboard = deriveDashboard(rowsDesc, state.settings, state.expenses);
   const budget = deriveBudget(rowsDesc, state.expenses, state.settings, state.budgetView);
+  const clockLead = deriveClockLeadAssessment(state.settings.clockInHours, state.settings.leadTimeHours);
 
   const app = document.getElementById("app");
   app.innerHTML = `
@@ -546,6 +591,7 @@ function renderApp() {
       <nav class="tabs">
         <button class="tab ${state.activeTab === "dashboard" ? "active" : ""}" data-tab="dashboard">${t("dashboard")}</button>
         <button class="tab ${state.activeTab === "analysis" ? "active" : ""}" data-tab="analysis">${t("analysis")}</button>
+        <button class="tab ${state.activeTab === "clockLead" ? "active" : ""}" data-tab="clockLead">${t("clockLead")}</button>
         <button class="tab ${state.activeTab === "income" ? "active" : ""}" data-tab="income">${t("income")}</button>
         <button class="tab ${state.activeTab === "expense" ? "active" : ""}" data-tab="expense">${t("expense")}</button>
         <button class="tab ${state.activeTab === "budget" ? "active" : ""}" data-tab="budget">${t("budget")}</button>
@@ -652,6 +698,47 @@ function renderApp() {
         </article>
       </section>
       -->
+      </div>
+
+      <div class="panel ${state.activeTab === "clockLead" ? "" : "hidden"}" data-panel="clockLead">
+      <main class="layout clocklead-layout">
+        <section class="card">
+          <h2>${t("clockLeadTitle")}</h2>
+          <form id="clock-lead-form" class="form-grid">
+            <label>
+              ${t("clockInTime")}
+              <input id="clock-in-hours" type="number" min="0" step="0.01" value="${fmtNumber(state.settings.clockInHours, 2)}" required />
+            </label>
+            <label>
+              ${t("leadTime")}
+              <input id="lead-time-hours" type="number" min="0" step="0.01" value="${fmtNumber(state.settings.leadTimeHours, 2)}" required />
+            </label>
+            <div class="form-actions full">
+              <button type="submit" class="btn primary">${t("save")}</button>
+            </div>
+          </form>
+        </section>
+
+        <section class="card">
+          <h2>${t("clockLeadStatusTitle")}</h2>
+          ${
+  clockLead.hasData
+    ? `<p class="clocklead-ratio">${t("clockLeadRatio")}: <b>${clockLead.ratioText}</b><span class="risk-badge ${clockLead.className}">${clockLead.label}</span></p>`
+    : `<p class="muted">${t("clockLeadNoData")}</p>`
+}
+          ${
+  clockLead.hasLead
+    ? `<div class="clocklead-title-spacer" aria-hidden="true"></div>
+             <ul class="clocklead-ranges">
+               <li class="${clockLead.className === "risk-safe" ? "is-active active-safe" : ""}"><span>${t("riskSafeHours")}</span><b>${fmtHours(state.settings.leadTimeHours)} - ${fmtHours(clockLead.threshold110)}</b></li>
+               <li class="${clockLead.className === "risk-warning" ? "is-active active-warning" : ""}"><span>${t("riskWarningHours")}</span><b>${fmtHours(clockLead.threshold110)} - ${fmtHours(clockLead.threshold115)}</b></li>
+               <li class="${clockLead.className === "risk-danger" ? "is-active active-danger" : ""}"><span>${t("riskDangerHours")}</span><b>${fmtHours(clockLead.threshold115)} - ${fmtHours(clockLead.threshold120)}</b></li>
+               <li class="${clockLead.className === "risk-critical" ? "is-active active-critical" : ""}"><span>${t("riskCriticalHours")}</span><b>${fmtHours(clockLead.threshold120)}+</b></li>
+             </ul>`
+    : ""
+}
+        </section>
+      </main>
       </div>
 
       <div class="panel ${state.activeTab === "income" ? "" : "hidden"}" data-panel="income">
@@ -907,7 +994,41 @@ function renderApp() {
 }
 
 function appFooterHtml() {
-  return `Created by <a href="https://github.com/rugtumu" target="_blank" rel="noopener noreferrer">@rugtumu</a> · v${escapeHtml(APP_VERSION)}`;
+  return `Created by <a id="creator-link" href="https://github.com/rugtumu" target="_blank" rel="noopener noreferrer">@rugtumu</a> · v${escapeHtml(APP_VERSION)}`;
+}
+
+function deriveClockLeadAssessment(clockInHours, leadTimeHours) {
+  const clock = Number(clockInHours);
+  const lead = Number(leadTimeHours);
+  const hasLead = Number.isFinite(lead) && lead > 0;
+  const threshold110 = hasLead ? round(lead * 1.1, 2) : 0;
+  const threshold115 = hasLead ? round(lead * 1.15, 2) : 0;
+  const threshold120 = hasLead ? round(lead * 1.2, 2) : 0;
+
+  if (!Number.isFinite(clock) || !hasLead || clock <= 0) {
+    return {
+      hasData: false,
+      hasLead,
+      threshold110,
+      threshold115,
+      threshold120,
+      ratioText: "-",
+      label: "",
+      className: ""
+    };
+  }
+
+  const ratio = clock / lead;
+  if (ratio < 1.1) {
+    return { hasData: true, hasLead, threshold110, threshold115, threshold120, ratioText: `${fmtNumber(ratio, 2)}x`, label: t("riskSafe"), className: "risk-safe" };
+  }
+  if (ratio < 1.15) {
+    return { hasData: true, hasLead, threshold110, threshold115, threshold120, ratioText: `${fmtNumber(ratio, 2)}x`, label: t("riskWarning"), className: "risk-warning" };
+  }
+  if (ratio < 1.2) {
+    return { hasData: true, hasLead, threshold110, threshold115, threshold120, ratioText: `${fmtNumber(ratio, 2)}x`, label: t("riskDanger"), className: "risk-danger" };
+  }
+  return { hasData: true, hasLead, threshold110, threshold115, threshold120, ratioText: `${fmtNumber(ratio, 2)}x`, label: t("riskCritical"), className: "risk-critical" };
 }
 
 function bindEvents(rowsDesc) {
@@ -923,9 +1044,11 @@ function bindEvents(rowsDesc) {
   const langToggle = document.getElementById("lang-toggle");
   const refreshUsdTryBtn = document.getElementById("refresh-usd-try");
   const refreshUsdTryCardBtn = document.getElementById("refresh-usd-try-card");
+  const clockLeadForm = document.getElementById("clock-lead-form");
   const budgetRange = document.getElementById("budget-range");
   const budgetGranularity = document.getElementById("budget-granularity");
   const budgetCurrency = document.getElementById("budget-currency");
+  const creatorLink = document.getElementById("creator-link");
 
   document.querySelectorAll(".tab[data-tab]").forEach((tabBtn) => {
     tabBtn.addEventListener("click", () => {
@@ -948,6 +1071,25 @@ function bindEvents(rowsDesc) {
     state.budgetView.currency = budgetCurrency.value === "USD" ? "USD" : "TRY";
     renderApp();
   });
+
+  creatorLink?.addEventListener("click", async (e) => {
+    e.preventDefault();
+    await openExternalUrl("https://github.com/rugtumu");
+  });
+
+  if (!dateDismissHandlerBound) {
+    document.addEventListener(
+      "pointerdown",
+      (e) => {
+        const active = document.activeElement;
+        if (!(active instanceof HTMLInputElement) || active.type !== "date") return;
+        if (e.target === active) return;
+        active.blur();
+      },
+      true
+    );
+    dateDismissHandlerBound = true;
+  }
 
   rateMode?.addEventListener("change", () => {
     customWrap.classList.toggle("hidden", rateMode.value !== "custom");
@@ -1081,6 +1223,26 @@ function bindEvents(rowsDesc) {
       weeklyTargetHours: round(weeklyTargetHours, 2),
       monthlyTargetHours: round(monthlyTargetHours, 2),
       language: language === "en" ? "en" : "tr"
+    };
+
+    await dataStore.saveSettings(state.settings);
+    renderApp();
+  });
+
+  clockLeadForm?.addEventListener("submit", async (e) => {
+    e.preventDefault();
+
+    const clockInHours = Number(document.getElementById("clock-in-hours").value);
+    const leadTimeHours = Number(document.getElementById("lead-time-hours").value);
+    if (!Number.isFinite(clockInHours) || !Number.isFinite(leadTimeHours) || clockInHours <= 0 || leadTimeHours <= 0) {
+      alert(t("invalidClockLead"));
+      return;
+    }
+
+    state.settings = {
+      ...state.settings,
+      clockInHours: round(clockInHours, 2),
+      leadTimeHours: round(leadTimeHours, 2)
     };
 
     await dataStore.saveSettings(state.settings);
@@ -1943,8 +2105,11 @@ function barChartSvg(series) {
       const x = pad.left + i * stepX + (stepX - barW) / 2;
       const h = Math.max(2, Math.round((s.hours / maxHours) * innerH));
       const y = pad.top + innerH - h;
+      const tip = `${s.label} | ${fmtHours(s.hours)} | ${fmtMoney(s.income)}`;
       return `<g>
-        <rect x="${x}" y="${y}" width="${barW}" height="${h}" rx="5" />
+        <rect x="${x}" y="${y}" width="${barW}" height="${h}" rx="5">
+          <title>${escapeHtml(tip)}</title>
+        </rect>
         <text class="axis-x" x="${x + barW / 2}" y="${height - 8}" text-anchor="middle">${escapeHtml(s.label)}</text>
       </g>`;
     })
@@ -2050,10 +2215,13 @@ function cycleHistogramSvg(series) {
       const dayLabel = day === "01" || i % 5 === 0
         ? `<text class="axis-x" x="${x + barW / 2}" y="${height - 8}" text-anchor="middle">${Number(day)}</text>`
         : "";
+      const tip = `${s.date} | $${fmtNumber(s.value, 2)}`;
 
       return `<g>
         ${monthMarker}
-        <rect class="cycle-bar" x="${x}" y="${y}" width="${barW}" height="${h}" rx="2" />
+        <rect class="cycle-bar" x="${x}" y="${y}" width="${barW}" height="${h}" rx="2">
+          <title>${escapeHtml(tip)}</title>
+        </rect>
         ${dayLabel}
       </g>`;
     })
@@ -2451,6 +2619,19 @@ function toNum(value) {
     .replace(/₺/g, "")
     .replace(/,/g, "");
   return Number(cleaned);
+}
+
+async function openExternalUrl(url) {
+  if (isTauriRuntime()) {
+    try {
+      await invoke("open_external_url", { url });
+      return;
+    } catch (error) {
+      console.error("open_external_url failed:", error);
+    }
+  }
+
+  window.open(url, "_blank", "noopener,noreferrer");
 }
 
 async function saveTextFile(filename, content) {

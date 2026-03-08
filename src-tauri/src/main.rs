@@ -2,6 +2,13 @@
 
 mod db;
 
+#[tauri::command]
+fn open_external_url(url: String) -> Result<(), String> {
+    webbrowser::open(&url)
+        .map(|_| ())
+        .map_err(|e| format!("failed to open url: {e}"))
+}
+
 fn main() {
     tauri::Builder::default()
         .setup(|app| {
@@ -18,7 +25,8 @@ fn main() {
             db::db_delete_expense,
             db::db_get_settings,
             db::db_set_settings,
-            db::save_text_file
+            db::save_text_file,
+            open_external_url
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");
