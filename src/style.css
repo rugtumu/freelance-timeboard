@@ -53,6 +53,7 @@ body {
   margin: 0;
   font-family: "Space Grotesk", sans-serif;
   color: var(--text);
+  padding-top: env(safe-area-inset-top);
   background-color: var(--bg);
   background:
     radial-gradient(circle at 8% 5%, rgba(255, 149, 0, 0.09), transparent 35%),
@@ -739,6 +740,35 @@ thead th {
   }
 }
 
+@media (max-width: 640px) {
+  .shell {
+    padding: 1.3rem 0.8rem 1.8rem;
+  }
+
+  .tabs {
+    flex-wrap: wrap;
+  }
+
+  .tab {
+    font-size: 0.78rem;
+    padding: 0.38rem 0.7rem;
+  }
+
+  .kpi-grid,
+  .analysis-kpi-grid,
+  .analysis-income-grid,
+  .clocklead-layout {
+    grid-template-columns: 1fr;
+  }
+
+  .card {
+    padding: 0.85rem;
+  }
+
+  .records-actions {
+    gap: 0.4rem;
+  }
+}
 
 .budget-list {
   display: grid;

@@ -311,10 +311,18 @@ pub fn save_text_file(app: tauri::AppHandle, filename: String, content: String) 
         .map(|c| if matches!(c, '/' | '\\' | ':' | '*' | '?' | '"' | '<' | '>' | '|') { '_' } else { c })
         .collect::<String>();
 
+    #[cfg(not(mobile))]
     let dir = app
         .path()
         .download_dir()
         .or_else(|_| app.path().desktop_dir())
+        .or_else(|_| app.path().app_data_dir())
+        .map_err(|e| format!("resolve output dir error: {e}"))?;
+
+    #[cfg(mobile)]
+    let dir = app
+        .path()
+        .download_dir()
         .or_else(|_| app.path().app_data_dir())
         .map_err(|e| format!("resolve output dir error: {e}"))?;
 

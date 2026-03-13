@@ -9,6 +9,7 @@ coverage/
 # Tauri / Rust
 src-tauri/target/
 **/*.rs.bk
+src-tauri/gen/android/
 
 # Logs
 npm-debug.log*
