@@ -1,6 +1,6 @@
 # Freelance Timeboard
 
-Günlük çalışma, gelir/gider, investment/trade takibi uygulaması.
+Günlük çalışma, gelir/gider, investment takibi uygulaması.
 
 ![Dashboard (mock data)](src/data/dashboard.png)
 
@@ -9,6 +9,7 @@ Günlük çalışma, gelir/gider, investment/trade takibi uygulaması.
 ## Özellikler
 - `Panel` sekmesi: haftalık/aylık saat grafikleri, günlük saat + rolling ortalama, heatmap
 - `Analiz` sekmesi: KPI kartları, hedef takibi ve cycle histogram
+- `Clock/Lead` sekmesi: clock-in ve lead time girişi, risk bandı hesaplama
 - `Gelir` sekmesi: günlük saat/gelir kaydı ekleme, düzenleme, silme
 - `Gider` sekmesi: USD/TRY para birimi ile gider girişi, düzenleme, silme
 - `Bütçe` sekmesi: toplam gelir, toplam gider, net bakiye ve kategori bazlı gider özeti
@@ -30,6 +31,24 @@ Günlük çalışma, gelir/gider, investment/trade takibi uygulaması.
 ## Build
 - Web: `npm run build`
 - Desktop: `npm run tauri:build`
+- Android APK: `npm run tauri:android:build`
+
+## Android (APK)
+1. Android SDK + NDK kurulu olmalı:
+   - `ANDROID_HOME` ve `ANDROID_SDK_ROOT` ayarlı olmalı.
+   - `NDK_HOME` doğru NDK dizinini göstermeli (ör. `~/Android/Sdk/ndk/29.0.13846066`).
+2. Android init:
+   - `npm run tauri:android:init`
+3. Geliştirme (cihaz bağlıyken):
+   - `adb devices` ile cihaz görünmeli.
+   - `npm run tauri:android:dev`
+4. APK build:
+   - `npm run tauri:android:build`
+
+### Android Notları
+- Telefon ve bilgisayar aynı ağda olmalı (dev server için).
+- Gerekirse Vite host: `server.host = true`.
+- Emülatör açılmazsa fiziksel cihaz ile deneme daha stabil olur.
 
 ## CSV İçe Aktarma
 1. `Gelir` sekmesine geç.
