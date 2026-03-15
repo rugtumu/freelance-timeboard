@@ -6,8 +6,15 @@ const APP_VERSION = typeof __APP_VERSION__ !== "undefined" ? __APP_VERSION__ : "
 const STORAGE_KEYS = {
   logs: "work_tracker_logs_v1",
   expenses: "work_tracker_expenses_v1",
-  settings: "work_tracker_settings_v1"
+  settings: "work_tracker_settings_v1",
+  investments: "work_tracker_investments_v1"
 };
+
+const TAB_ORDER = ["dashboard", "analysis", "clockLead", "data", "investment", "budget"];
+const DEFAULT_VISIBLE_TABS = TAB_ORDER.reduce((acc, key) => {
+  acc[key] = true;
+  return acc;
+}, {});
 
 const DEFAULT_SETTINGS = {
   standardRateUsd: 25,
@@ -19,20 +26,33 @@ const DEFAULT_SETTINGS = {
   weeklyTargetHours: 35,
   monthlyTargetHours: 140,
   theme: "dark",
-  language: "tr"
+  language: "tr",
+  exchangeKeys: [],
+  visibleTabs: { ...DEFAULT_VISIBLE_TABS }
 };
 
 const state = {
   logs: [],
   expenses: [],
+  investments: [],
   settings: { ...DEFAULT_SETTINGS },
+  exchangeKeyStatus: {},
+  vaultPassword: "",
   editingId: null,
   editingExpenseId: null,
+  editingInvestmentId: null,
   activeTab: "dashboard",
+  dataTab: "income",
   budgetView: {
     range: "90d",
     granularity: "daily",
     currency: "TRY"
+  },
+  investmentView: {
+    filterType: "All",
+    sortKey: "value",
+    sortDir: "desc",
+    query: ""
   }
 };
 
@@ -44,9 +64,14 @@ const I18N = {
     heading: "Günlük takip, performans analizi",
     dashboard: "Panel",
     analysis: "Analiz",
+    data: "Veri",
+    settingsTab: "Ayarlar",
+    investment: "Yatırım",
     clockLead: "Clock/Lead",
     exportCsv: "CSV Dışa Aktar",
     importCsv: "CSV İçe Aktar",
+    exportDataCsv: "Gelir+Gider CSV Dışa Aktar",
+    importDataCsv: "Gelir+Gider CSV İçe Aktar",
     toLightTheme: "Açık Tema",
     toDarkTheme: "Koyu Tema",
     themeToggleAria: "Temayı değiştir",
@@ -55,6 +80,66 @@ const I18N = {
     income: "Gelir",
     expense: "Gider",
     budget: "Bütçe",
+    investmentTitle: "Yatırım",
+    investmentComingSoon: "Yatırım ekranı burada olacak.",
+    totalValue: "Toplam Değer",
+    investments: "Yatırımlar",
+    cash: "Nakit",
+    profitLoss: "Kar/Zarar",
+    cashOut: "Nakit Çıkışı",
+    best: "En İyi",
+    beta: "Beta",
+    sharpe: "Sharpe Oranı",
+    sortino: "Sortino Oranı",
+    volatility: "Volatilite",
+    maxDrawdown: "Maks. Düşüş",
+    performanceHistory: "Performans Geçmişi",
+    allocation: "Dağılım",
+    holdings: "Varlıklar",
+    importHoldings: "İçe Aktar",
+    addAsset: "Varlık Ekle",
+    addAssetTitle: "Varlık Ekle",
+    holdingsFilter: "Filtre",
+    holdingsSort: "Sıralama",
+    holdingsSearch: "Ara",
+    sortValue: "Değer",
+    sortPnl: "Kar/Zarar",
+    sortWeight: "Ağırlık",
+    sortName: "İsim",
+    sortSymbol: "Sembol",
+    sortAsc: "Artan",
+    sortDesc: "Azalan",
+    vaultPasswordNote: "Uygulamayı kapatıp açınca Vault parolasını tekrar girmen gerekir.",
+    vaultPasswordPrompt: "Vault parolasını gir",
+    costMissing: "Maliyet yok",
+    symbol: "Sembol",
+    assetType: "Tip",
+    avgCost: "Ort. Maliyet",
+    price: "Fiyat",
+    sector: "Sektör",
+    buyPrice: "Alış Fiyatı",
+    currentPrice: "Güncel Fiyat",
+    fetchPrice: "Fiyatı Çek",
+    priceFetchFailed: "Güncel fiyat alınamadı.",
+    priceFetchUnsupported: "Bu varlık türü için otomatik fiyat henüz desteklenmiyor.",
+    bybitApiKey: "Bybit API Key",
+    bybitApiSecret: "Bybit API Secret",
+    bybitSync: "Senkronize Et",
+    bybitSyncFailed: "Bybit senkronizasyonu başarısız oldu.",
+    bybitMissingCreds: "Bybit API bilgileri eksik.",
+    exchangeKeySaveFailed: "API anahtarı kaydedilemedi.",
+    exchangeKeySaveFailedWithReason: "API anahtarı kaydedilemedi: {reason}",
+    vaultPasswordRequired: "Keyring çalışmadığı için Vault parolası gerekli.",
+    settingsGeneral: "Genel Ayarlar",
+    tabVisibility: "Sekme Görünürlüğü",
+    keySaved: "Kaydedildi",
+    keyMissing: "Eksik",
+    exchangeKeys: "Borsa API Anahtarları",
+    exchange: "Borsa",
+    apiKey: "API Key",
+    apiSecret: "API Secret",
+    addExchangeKey: "Borsa Ekle",
+    remove: "Kaldır",
     clockLeadTitle: "Clock-in ve Lead Time",
     clockInTime: "Clock-in Time (saat)",
     leadTime: "Lead Time (saat)",
@@ -95,6 +180,8 @@ const I18N = {
     hours: "Saat",
     rateType: "Ücret Tipi",
     note: "Not",
+    name: "İsim",
+    value: "Değer",
     notePlaceholder: "Opsiyonel not",
     update: "Güncelle",
     save: "Kaydet",
@@ -124,9 +211,13 @@ const I18N = {
     invalidClockLead: "Clock-in ve Lead Time 0'dan büyük olmalı.",
     deleteConfirm: "Kayıt silinsin mi?",
     csvInvalid: "CSV parse edilemedi ya da geçerli satır bulunamadı.",
+    dataCsvInvalid: "Gelir/Gider CSV'si parse edilemedi ya da geçerli satır bulunamadı.",
     parsedCount: "{count} kayıt parse edildi.",
     warningCount: "Uyarı: {count} satır atlandı veya düzeltildi.",
     replaceConfirm: "Mevcut kayıtlar bununla değiştirilsin mi?",
+    dataParsedSummary: "Gelir: {income}, Gider: {expense}.",
+    dataReplaceConfirm: "Bu işlem mevcut Gelir ve Gider verilerini tamamen değiştirecek. Devam edilsin mi?",
+    investmentReplaceConfirm: "Bu işlem mevcut yatırım verilerini tamamen değiştirecek. Devam edilsin mi?",
     importDoneWarnings: "Import tamamlandı. İlk uyarılar:",
     themeSaveFailed: "Tema kaydedilemedi. Lütfen tekrar dene.",
     rateFetchFailed: "Canlı kur alınamadı. Değeri elle girebilirsin.",
@@ -151,6 +242,7 @@ const I18N = {
     expectedColumns: "Beklenen kolonlar bulunamadı.",
     rowInvalidDate: "Satır {row}: geçersiz tarih.",
     rowInvalidHours: "Satır {row}: saat geçersiz ({value}).",
+    rowInvalidAmount: "Satır {row}: tutar geçersiz ({value}).",
     duplicateDateWarn: "Aynı tarih tekrar etti ({date}), son satır kullanıldı.",
     language: "Dil",
     turkish: "Türkçe",
@@ -193,9 +285,14 @@ const I18N = {
     heading: "Daily tracking, performance analytics",
     dashboard: "Dashboard",
     analysis: "Analysis",
+    data: "Data",
+    settingsTab: "Settings",
+    investment: "Investment",
     clockLead: "Clock/Lead",
     exportCsv: "Export CSV",
     importCsv: "Import CSV",
+    exportDataCsv: "Export Income+Expense CSV",
+    importDataCsv: "Import Income+Expense CSV",
     toLightTheme: "Light Theme",
     toDarkTheme: "Dark Theme",
     themeToggleAria: "Toggle theme",
@@ -204,6 +301,66 @@ const I18N = {
     income: "Income",
     expense: "Expense",
     budget: "Budget",
+    investmentTitle: "Investment",
+    investmentComingSoon: "Investment dashboard will live here.",
+    totalValue: "Total Value",
+    investments: "Investments",
+    cash: "Cash",
+    profitLoss: "P/L",
+    cashOut: "Cash Out",
+    best: "Best",
+    beta: "Beta",
+    sharpe: "Sharpe",
+    sortino: "Sortino",
+    volatility: "Volatility",
+    maxDrawdown: "Max Drawdown",
+    performanceHistory: "Performance History",
+    allocation: "Allocation",
+    holdings: "Holdings",
+    importHoldings: "Import",
+    addAsset: "Add Asset",
+    addAssetTitle: "Add Asset",
+    holdingsFilter: "Filter",
+    holdingsSort: "Sort",
+    holdingsSearch: "Search",
+    sortValue: "Value",
+    sortPnl: "P/L",
+    sortWeight: "Weight",
+    sortName: "Name",
+    sortSymbol: "Symbol",
+    sortAsc: "Ascending",
+    sortDesc: "Descending",
+    vaultPasswordNote: "You need to re-enter the vault password after restarting the app.",
+    vaultPasswordPrompt: "Enter vault password",
+    costMissing: "Missing cost",
+    symbol: "Symbol",
+    assetType: "Type",
+    avgCost: "Avg Cost",
+    price: "Price",
+    sector: "Sector",
+    buyPrice: "Buy Price",
+    currentPrice: "Current Price",
+    fetchPrice: "Fetch Price",
+    priceFetchFailed: "Failed to fetch current price.",
+    priceFetchUnsupported: "Auto price fetch is not supported for this asset type yet.",
+    bybitApiKey: "Bybit API Key",
+    bybitApiSecret: "Bybit API Secret",
+    bybitSync: "Sync",
+    bybitSyncFailed: "Bybit sync failed.",
+    bybitMissingCreds: "Bybit API credentials are missing.",
+    exchangeKeySaveFailed: "API key could not be saved.",
+    exchangeKeySaveFailedWithReason: "API key could not be saved: {reason}",
+    vaultPasswordRequired: "Vault password is required because keyring is unavailable.",
+    settingsGeneral: "General Settings",
+    tabVisibility: "Tab Visibility",
+    keySaved: "Saved",
+    keyMissing: "Missing",
+    exchangeKeys: "Exchange API Keys",
+    exchange: "Exchange",
+    apiKey: "API Key",
+    apiSecret: "API Secret",
+    addExchangeKey: "Add Exchange",
+    remove: "Remove",
     clockLeadTitle: "Clock-in and Lead Time",
     clockInTime: "Clock-in Time (hours)",
     leadTime: "Lead Time (hours)",
@@ -244,6 +401,8 @@ const I18N = {
     hours: "Hours",
     rateType: "Rate Type",
     note: "Note",
+    name: "Name",
+    value: "Value",
     notePlaceholder: "Optional note",
     update: "Update",
     save: "Save",
@@ -273,9 +432,13 @@ const I18N = {
     invalidClockLead: "Clock-in and Lead Time must be greater than 0.",
     deleteConfirm: "Delete this record?",
     csvInvalid: "CSV could not be parsed or no valid rows found.",
+    dataCsvInvalid: "Income/Expense CSV could not be parsed or no valid rows found.",
     parsedCount: "{count} records parsed.",
     warningCount: "Warning: {count} rows were skipped or corrected.",
     replaceConfirm: "Replace current records with imported data?",
+    dataParsedSummary: "Income: {income}, Expense: {expense}.",
+    dataReplaceConfirm: "This will completely replace your Income and Expense data. Continue?",
+    investmentReplaceConfirm: "This will completely replace your investment data. Continue?",
     importDoneWarnings: "Import completed. First warnings:",
     themeSaveFailed: "Theme could not be saved. Please try again.",
     rateFetchFailed: "Could not fetch live rate. You can enter it manually.",
@@ -300,6 +463,7 @@ const I18N = {
     expectedColumns: "Expected columns were not found.",
     rowInvalidDate: "Row {row}: invalid date.",
     rowInvalidHours: "Row {row}: invalid hours ({value}).",
+    rowInvalidAmount: "Row {row}: invalid amount ({value}).",
     duplicateDateWarn: "Duplicate date detected ({date}), last row was used.",
     language: "Language",
     turkish: "Türkçe",
@@ -353,7 +517,9 @@ async function bootstrap() {
   const loaded = await dataStore.load();
   state.logs = loaded.logs;
   state.expenses = loaded.expenses;
+  state.investments = loaded.investments;
   state.settings = { ...DEFAULT_SETTINGS, ...loaded.settings };
+  await refreshExchangeKeyStatus();
   applyTheme();
   renderApp();
 }
@@ -362,10 +528,11 @@ const dataStore = {
   async load() {
     if (isTauriRuntime()) {
       try {
-        const [logs, expenses, rawSettings] = await Promise.all([
+        const [logs, expenses, rawSettings, investments] = await Promise.all([
           invoke("db_get_logs"),
           invoke("db_get_expenses"),
-          invoke("db_get_settings")
+          invoke("db_get_settings"),
+          invoke("db_get_investments")
         ]);
 
         let hydratedExpenses = Array.isArray(expenses) ? expenses.map(mapDbExpenseToUi) : [];
@@ -380,7 +547,8 @@ const dataStore = {
         return {
           logs: Array.isArray(logs) ? logs.map(mapDbLogToUi) : [],
           expenses: hydratedExpenses,
-          settings: mapRawSettings(rawSettings)
+          settings: mapRawSettings(rawSettings),
+          investments: Array.isArray(investments) ? investments.map(mapDbInvestmentToUi) : []
         };
       } catch (error) {
         console.error("SQLite load failed, fallback localStorage:", error);
@@ -390,13 +558,19 @@ const dataStore = {
     return {
       logs: loadLogsFromLocal(),
       expenses: loadExpensesFromLocal(),
-      settings: loadSettingsFromLocal()
+      settings: loadSettingsFromLocal(),
+      investments: loadInvestmentsFromLocal()
     };
   },
 
   async saveSettings(settings) {
     if (isTauriRuntime()) {
-      const payload = Object.fromEntries(Object.entries(settings).map(([k, v]) => [k, String(v)]));
+      const payload = Object.fromEntries(
+        Object.entries(settings).map(([k, v]) => {
+          if (v && typeof v === "object") return [k, JSON.stringify(v)];
+          return [k, String(v ?? "")];
+        })
+      );
       await invoke("db_set_settings", { settings: payload });
       return;
     }
@@ -447,6 +621,36 @@ const dataStore = {
     if (idx >= 0) expenses[idx] = expense;
     else expenses.push(expense);
     localStorage.setItem(STORAGE_KEYS.expenses, JSON.stringify(expenses));
+  },
+
+  async upsertInvestment(investment) {
+    if (isTauriRuntime()) {
+      await invoke("db_upsert_investment", { investment: mapUiInvestmentToDb(investment) });
+      return;
+    }
+
+    const investments = loadInvestmentsFromLocal();
+    const idx = investments.findIndex((x) => x.id === investment.id);
+    if (idx >= 0) investments[idx] = investment;
+    else investments.push(investment);
+    localStorage.setItem(STORAGE_KEYS.investments, JSON.stringify(investments));
+  },
+
+  async deleteInvestment(id) {
+    if (isTauriRuntime()) {
+      await invoke("db_delete_investment", { id });
+      return;
+    }
+    const investments = loadInvestmentsFromLocal().filter((x) => x.id !== id);
+    localStorage.setItem(STORAGE_KEYS.investments, JSON.stringify(investments));
+  },
+
+  async replaceInvestments(investments) {
+    if (isTauriRuntime()) {
+      await invoke("db_replace_investments", { investments: investments.map(mapUiInvestmentToDb) });
+      return;
+    }
+    localStorage.setItem(STORAGE_KEYS.investments, JSON.stringify(investments));
   },
 
   async deleteExpense(id) {
@@ -500,6 +704,17 @@ function loadSettingsFromLocal() {
   }
 }
 
+function loadInvestmentsFromLocal() {
+  try {
+    const raw = localStorage.getItem(STORAGE_KEYS.investments);
+    if (!raw) return [];
+    const parsed = JSON.parse(raw);
+    return Array.isArray(parsed) ? parsed : [];
+  } catch {
+    return [];
+  }
+}
+
 function mapDbLogToUi(log) {
   return {
     id: String(log.id),
@@ -546,6 +761,36 @@ function mapUiExpenseToDb(expense) {
   };
 }
 
+function mapDbInvestmentToUi(investment) {
+  return {
+    id: String(investment.id),
+    symbol: String(investment.symbol || ""),
+    name: String(investment.name || ""),
+    assetType: String(investment.asset_type || ""),
+    amount: Number(investment.amount) || 0,
+    avgCost: Number(investment.avg_cost) || 0,
+    price: Number(investment.price) || 0,
+    currency: String(investment.currency || "USD").toUpperCase() === "TRY" ? "TRY" : "USD",
+    sector: String(investment.sector || ""),
+    note: String(investment.note || "")
+  };
+}
+
+function mapUiInvestmentToDb(investment) {
+  return {
+    id: String(investment.id),
+    symbol: String(investment.symbol || ""),
+    name: String(investment.name || ""),
+    asset_type: String(investment.assetType || ""),
+    amount: Number(investment.amount) || 0,
+    avg_cost: Number(investment.avgCost) || 0,
+    price: Number(investment.price) || 0,
+    currency: String(investment.currency || "USD").toUpperCase() === "TRY" ? "TRY" : "USD",
+    sector: String(investment.sector || ""),
+    note: String(investment.note || "")
+  };
+}
+
 function mapRawSettings(raw) {
   const src = raw && typeof raw === "object" ? raw : {};
   const clockInHours = toNum(src.clockInHours);
@@ -560,8 +805,43 @@ function mapRawSettings(raw) {
     weeklyTargetHours: toNum(src.weeklyTargetHours),
     monthlyTargetHours: toNum(src.monthlyTargetHours),
     theme: src.theme || DEFAULT_SETTINGS.theme,
-    language: src.language || DEFAULT_SETTINGS.language
+    language: src.language || DEFAULT_SETTINGS.language,
+    exchangeKeys: parseExchangeKeys(src.exchangeKeys),
+    visibleTabs: normalizeVisibleTabs(src.visibleTabs)
   };
+}
+
+function normalizeVisibleTabs(raw) {
+  if (!raw) return { ...DEFAULT_VISIBLE_TABS };
+  let parsed = raw;
+  if (typeof raw === "string") {
+    try {
+      parsed = JSON.parse(raw);
+    } catch {
+      parsed = null;
+    }
+  }
+  if (!parsed || typeof parsed !== "object") return { ...DEFAULT_VISIBLE_TABS };
+  const out = { ...DEFAULT_VISIBLE_TABS };
+  for (const key of Object.keys(out)) {
+    if (typeof parsed[key] === "boolean") {
+      out[key] = parsed[key];
+    }
+  }
+  return out;
+}
+
+function parseExchangeKeys(raw) {
+  if (Array.isArray(raw)) return raw;
+  if (typeof raw === "string" && raw.trim()) {
+    try {
+      const parsed = JSON.parse(raw);
+      if (Array.isArray(parsed)) return parsed;
+    } catch {
+      // ignore
+    }
+  }
+  return [];
 }
 
 function renderApp() {
@@ -569,6 +849,15 @@ function renderApp() {
   const dashboard = deriveDashboard(rowsDesc, state.settings, state.expenses);
   const budget = deriveBudget(rowsDesc, state.expenses, state.settings, state.budgetView);
   const clockLead = deriveClockLeadAssessment(state.settings.clockInHours, state.settings.leadTimeHours);
+  const visibleTabs = normalizeVisibleTabs(state.settings.visibleTabs);
+  const availableTabs = TAB_ORDER.filter((tab) => visibleTabs[tab]);
+  if (!availableTabs.length) {
+    visibleTabs.dashboard = true;
+    availableTabs.push("dashboard");
+  }
+  if (state.activeTab !== "settings" && !visibleTabs[state.activeTab]) {
+    state.activeTab = availableTabs[0];
+  }
 
   const app = document.getElementById("app");
   app.innerHTML = `
@@ -585,16 +874,19 @@ function renderApp() {
           <button id="lang-toggle" class="btn ghost lang-btn" title="${t("langToggleAria")}" aria-label="${t("langToggleAria")}">
             ${state.settings.language === "tr" ? "EN" : "TR"}
           </button>
+          <button id="settings-toggle" class="btn ghost icon-btn" title="${t("settingsTab")}" aria-label="${t("settingsTab")}">
+            ${settingsIcon()}
+          </button>
         </div>
       </header>
 
       <nav class="tabs">
-        <button class="tab ${state.activeTab === "dashboard" ? "active" : ""}" data-tab="dashboard">${t("dashboard")}</button>
-        <button class="tab ${state.activeTab === "analysis" ? "active" : ""}" data-tab="analysis">${t("analysis")}</button>
-        <button class="tab ${state.activeTab === "clockLead" ? "active" : ""}" data-tab="clockLead">${t("clockLead")}</button>
-        <button class="tab ${state.activeTab === "income" ? "active" : ""}" data-tab="income">${t("income")}</button>
-        <button class="tab ${state.activeTab === "expense" ? "active" : ""}" data-tab="expense">${t("expense")}</button>
-        <button class="tab ${state.activeTab === "budget" ? "active" : ""}" data-tab="budget">${t("budget")}</button>
+        ${availableTabs
+          .map(
+            (tab) =>
+              `<button class="tab ${state.activeTab === tab ? "active" : ""}" data-tab="${tab}">${t(tab)}</button>`
+          )
+          .join("")}
       </nav>
 
       <div class="panel ${state.activeTab === "dashboard" ? "" : "hidden"}" data-panel="dashboard">
@@ -741,7 +1033,20 @@ function renderApp() {
       </main>
       </div>
 
-      <div class="panel ${state.activeTab === "income" ? "" : "hidden"}" data-panel="income">
+      <div class="panel ${state.activeTab === "data" ? "" : "hidden"}" data-panel="data">
+      <div class="records-actions data-actions">
+        <button id="export-csv-all" class="btn ghost">${t("exportDataCsv")}</button>
+        <label class="btn ghost file-btn">
+          ${t("importDataCsv")}
+          <input id="import-csv-all" type="file" accept=".csv,text/csv" />
+        </label>
+      </div>
+      <nav class="subtabs">
+        <button class="subtab ${state.dataTab === "income" ? "active" : ""}" data-subtab="income">${t("income")}</button>
+        <button class="subtab ${state.dataTab === "expense" ? "active" : ""}" data-subtab="expense">${t("expense")}</button>
+      </nav>
+
+      <div class="${state.dataTab === "income" ? "" : "hidden"}" data-subpanel="income">
       <main class="layout">
         <section class="card">
           <h2>${state.editingId ? t("editRecord") : t("dailyEntry")}</h2>
@@ -777,51 +1082,6 @@ function renderApp() {
           </form>
         </section>
 
-        <section class="card">
-          <h2>${t("settings")}</h2>
-          <form id="settings-form" class="form-grid">
-            <label>
-              ${t("standardRate")}
-              <input id="setting-standard" type="number" min="0" step="0.01" value="${state.settings.standardRateUsd}" required />
-            </label>
-            <label>
-              ${t("specialRate")}
-              <input id="setting-special" type="number" min="0" step="0.01" value="${state.settings.specialRateUsd}" required />
-            </label>
-            <label>
-              ${t("usdTry")}
-              <input id="setting-usd-try" type="number" min="0" step="0.00001" value="${state.settings.usdTry}" required />
-            </label>
-            <div class="full inline-actions">
-              <button type="button" id="refresh-usd-try" class="btn ghost">${t("refreshRate")}</button>
-            </div>
-            <label>
-              ${t("cycleReset")}
-              <select id="setting-cycle-rule">
-                <option value="monthly" ${state.settings.cycleResetRule === "monthly" ? "selected" : ""}>${t("monthly")}</option>
-                <option value="manual" ${state.settings.cycleResetRule === "manual" ? "selected" : ""}>${t("manual")} (cycleId)</option>
-              </select>
-            </label>
-            <label>
-              ${t("weeklyTargetHours")}
-              <input id="setting-weekly-target" type="number" min="0" step="0.25" value="${state.settings.weeklyTargetHours}" required />
-            </label>
-            <label>
-              ${t("monthlyTargetHours")}
-              <input id="setting-monthly-target" type="number" min="0" step="0.25" value="${state.settings.monthlyTargetHours}" required />
-            </label>
-            <label>
-              ${t("language")}
-              <select id="setting-language">
-                <option value="tr" ${state.settings.language === "tr" ? "selected" : ""}>${t("turkish")}</option>
-                <option value="en" ${state.settings.language === "en" ? "selected" : ""}>${t("english")}</option>
-              </select>
-            </label>
-            <div class="form-actions full">
-              <button type="submit" class="btn primary">${t("saveSettings")}</button>
-            </div>
-          </form>
-        </section>
       </main>
 
       <section class="card records-table-card">
@@ -856,7 +1116,7 @@ function renderApp() {
       </section>
       </div>
 
-      <div class="panel ${state.activeTab === "expense" ? "" : "hidden"}" data-panel="expense">
+      <div class="${state.dataTab === "expense" ? "" : "hidden"}" data-subpanel="expense">
       <main class="layout">
         <section class="card">
           <h2>${state.editingExpenseId ? t("updateExpense") : t("expenseEntry")}</h2>
@@ -914,74 +1174,200 @@ function renderApp() {
         </div>
       </section>
       </div>
+      </div>
+
+      <div class="panel settings-panel ${state.activeTab === "settings" ? "" : "hidden"}" data-panel="settings">
+      <div class="panel-inner">
+      <main class="layout">
+        <form id="settings-form" class="settings-grid">
+          <section class="card settings-card">
+            <h2>${t("settingsGeneral")}</h2>
+            <div class="form-grid">
+              <label>
+                ${t("standardRate")}
+                <input id="setting-standard" type="number" min="0" step="0.01" value="${state.settings.standardRateUsd}" required />
+              </label>
+              <label>
+                ${t("specialRate")}
+                <input id="setting-special" type="number" min="0" step="0.01" value="${state.settings.specialRateUsd}" required />
+              </label>
+              <label>
+                ${t("usdTry")}
+                <input id="setting-usd-try" type="number" min="0" step="0.00001" value="${state.settings.usdTry}" required />
+              </label>
+              <div class="full inline-actions">
+                <button type="button" id="refresh-usd-try" class="btn ghost">${t("refreshRate")}</button>
+              </div>
+              <label>
+                ${t("cycleReset")}
+                <select id="setting-cycle-rule">
+                  <option value="monthly" ${state.settings.cycleResetRule === "monthly" ? "selected" : ""}>${t("monthly")}</option>
+                  <option value="manual" ${state.settings.cycleResetRule === "manual" ? "selected" : ""}>${t("manual")} (cycleId)</option>
+                </select>
+              </label>
+              <label>
+                ${t("weeklyTargetHours")}
+                <input id="setting-weekly-target" type="number" min="0" step="0.25" value="${state.settings.weeklyTargetHours}" required />
+              </label>
+              <label>
+                ${t("monthlyTargetHours")}
+                <input id="setting-monthly-target" type="number" min="0" step="0.25" value="${state.settings.monthlyTargetHours}" required />
+              </label>
+              <label>
+                ${t("language")}
+                <select id="setting-language">
+                  <option value="tr" ${state.settings.language === "tr" ? "selected" : ""}>${t("turkish")}</option>
+                  <option value="en" ${state.settings.language === "en" ? "selected" : ""}>${t("english")}</option>
+                </select>
+              </label>
+            </div>
+            <div class="form-actions full settings-actions">
+              <button type="submit" class="btn primary">${t("save")}</button>
+            </div>
+          </section>
+
+          <section class="card settings-card">
+            <h2>${t("exchangeKeys")}</h2>
+            <div class="form-grid">
+              <div class="full">
+                <div id="exchange-keys">
+                  ${(state.settings.exchangeKeys?.length ? state.settings.exchangeKeys : [{ exchange: "bybit" }]).map((row) => `
+                    <div class="exchange-key-row">
+                      <label>
+                        ${t("exchange")}
+                        <select data-exchange="exchange">
+                          <option value="bybit" ${row.exchange === "bybit" ? "selected" : ""}>Bybit</option>
+                          <option value="binance" ${row.exchange === "binance" ? "selected" : ""}>Binance</option>
+                          <option value="okx" ${row.exchange === "okx" ? "selected" : ""}>OKX</option>
+                          <option value="kucoin" ${row.exchange === "kucoin" ? "selected" : ""}>KuCoin</option>
+                        </select>
+                      </label>
+                      <label>
+                        ${t("apiKey")}
+                        <input type="password" data-exchange="apiKey" placeholder="••••••" value="" />
+                      </label>
+                      <label>
+                        ${t("apiSecret")}
+                        <input type="password" data-exchange="apiSecret" placeholder="••••••" value="" />
+                      </label>
+                      <button type="button" class="btn ghost" data-exchange-action="remove">${t("remove")}</button>
+                      <span class="key-status">${t(state.exchangeKeyStatus?.[row.exchange] ? "keySaved" : "keyMissing")}</span>
+                    </div>
+                  `).join("")}
+                </div>
+                <button type="button" id="add-exchange-key" class="btn ghost">${t("addExchangeKey")}</button>
+              </div>
+              <div class="full">
+                <label>
+                ${t("vaultPassword")}
+                <input id="setting-vault-password" type="password" placeholder="••••••" value="" />
+                <span class="muted">${t("vaultPasswordNote")}</span>
+              </label>
+            </div>
+            </div>
+            <div class="form-actions full settings-actions">
+              <button type="submit" class="btn primary">${t("save")}</button>
+            </div>
+          </section>
+
+          <section class="card settings-card">
+            <h2>${t("tabVisibility")}</h2>
+            <div class="tab-visibility-list">
+              ${TAB_ORDER.map((tab) => `
+                <label class="toggle-row">
+                  <span>${t(tab)}</span>
+                  <input type="checkbox" data-tab-visibility="${tab}" ${visibleTabs[tab] ? "checked" : ""} />
+                  <span class="toggle-pill"></span>
+                </label>
+              `).join("")}
+            </div>
+            <div class="form-actions full settings-actions">
+              <button type="submit" class="btn primary">${t("save")}</button>
+            </div>
+          </section>
+
+        </form>
+      </main>
+      </div>
+      </div>
+
+      <div class="panel ${state.activeTab === "investment" ? "" : "hidden"}" data-panel="investment">
+      <div class="panel-inner">
+        <main class="investment-layout">
+          ${investmentPanelHtml()}
+        </main>
+      </div>
+      </div>
 
       <div class="panel ${state.activeTab === "budget" ? "" : "hidden"}" data-panel="budget">
-      <section class="card budget-controls-card">
-        <div class="budget-controls">
-          <label>
-            ${t("budgetRange")}
-            <select id="budget-range">
-              <option value="30d" ${state.budgetView.range === "30d" ? "selected" : ""}>${t("range30d")}</option>
-              <option value="90d" ${state.budgetView.range === "90d" ? "selected" : ""}>${t("range90d")}</option>
-              <option value="ytd" ${state.budgetView.range === "ytd" ? "selected" : ""}>${t("rangeYtd")}</option>
-              <option value="all" ${state.budgetView.range === "all" ? "selected" : ""}>${t("rangeAll")}</option>
-            </select>
-          </label>
-          <label>
-            ${t("granularity")}
-            <select id="budget-granularity">
-              <option value="daily" ${state.budgetView.granularity === "daily" ? "selected" : ""}>${t("daily")}</option>
-              <option value="weekly" ${state.budgetView.granularity === "weekly" ? "selected" : ""}>${t("weekly")}</option>
-              <option value="monthly" ${state.budgetView.granularity === "monthly" ? "selected" : ""}>${t("monthly")}</option>
-            </select>
-          </label>
-          <label>
-            ${t("currency")}
-            <select id="budget-currency">
-              <option value="TRY" ${state.budgetView.currency === "TRY" ? "selected" : ""}>TRY</option>
-              <option value="USD" ${state.budgetView.currency === "USD" ? "selected" : ""}>USD</option>
-            </select>
-          </label>
-        </div>
-      </section>
+      <div class="panel-inner">
+        <section class="card budget-controls-card">
+          <div class="budget-controls">
+            <label>
+              ${t("budgetRange")}
+              <select id="budget-range">
+                <option value="30d" ${state.budgetView.range === "30d" ? "selected" : ""}>${t("range30d")}</option>
+                <option value="90d" ${state.budgetView.range === "90d" ? "selected" : ""}>${t("range90d")}</option>
+                <option value="ytd" ${state.budgetView.range === "ytd" ? "selected" : ""}>${t("rangeYtd")}</option>
+                <option value="all" ${state.budgetView.range === "all" ? "selected" : ""}>${t("rangeAll")}</option>
+              </select>
+            </label>
+            <label>
+              ${t("granularity")}
+              <select id="budget-granularity">
+                <option value="daily" ${state.budgetView.granularity === "daily" ? "selected" : ""}>${t("daily")}</option>
+                <option value="weekly" ${state.budgetView.granularity === "weekly" ? "selected" : ""}>${t("weekly")}</option>
+                <option value="monthly" ${state.budgetView.granularity === "monthly" ? "selected" : ""}>${t("monthly")}</option>
+              </select>
+            </label>
+            <label>
+              ${t("currency")}
+              <select id="budget-currency">
+                <option value="TRY" ${state.budgetView.currency === "TRY" ? "selected" : ""}>TRY</option>
+                <option value="USD" ${state.budgetView.currency === "USD" ? "selected" : ""}>USD</option>
+              </select>
+            </label>
+          </div>
+        </section>
 
-      <section class="kpi-grid budget-grid">
-        <article class="card">
-          <h3>${t("cumulativeIncome")}</h3>
-          <p>${fmtMoney(budget.incomeUsd)}</p>
-          <small class="muted">${fmtTry(budget.incomeTry)}</small>
-        </article>
-        <article class="card">
-          <h3>${t("totalExpense")}</h3>
-          <p>${fmtMoney(budget.expenseUsd)}</p>
-          <small class="muted">${fmtTry(budget.expenseTry)}</small>
-        </article>
-        <article class="card">
-          <h3>${t("netBalance")}</h3>
-          <p>${fmtMoney(budget.netUsd)}</p>
-          <small class="muted">${fmtTry(budget.netTry)}</small>
-        </article>
-      </section>
+        <section class="kpi-grid budget-grid">
+          <article class="card">
+            <h3>${t("cumulativeIncome")}</h3>
+            <p>${fmtMoney(budget.incomeUsd)}</p>
+            <small class="muted">${fmtTry(budget.incomeTry)}</small>
+            <button
+              id="refresh-usd-try-budget"
+              class="btn ghost icon-btn card-refresh-btn"
+              title="${t("refreshRate")}"
+              aria-label="${t("refreshRate")}"
+            >
+              ${refreshIcon()}
+            </button>
+          </article>
+          <article class="card">
+            <h3>${t("totalExpense")}</h3>
+            <p>${fmtMoney(budget.expenseUsd)}</p>
+            <small class="muted">${fmtTry(budget.expenseTry)}</small>
+          </article>
+          <article class="card">
+            <h3>${t("netBalance")}</h3>
+            <p>${fmtMoney(budget.netUsd)}</p>
+            <small class="muted">${fmtTry(budget.netTry)}</small>
+          </article>
+        </section>
 
-      <section class="viz-grid budget-viz-grid">
-        <article class="card full-viz">
-          <h3>${t("budgetTrend")}</h3>
-          ${budgetTrendChartSvg(budget.series, state.budgetView.currency)}
-        </article>
-        <article class="card">
-          <h3>${t("cumulativeNet")}</h3>
-          ${budgetCumulativeChartSvg(budget.series, state.budgetView.currency)}
-        </article>
-        <article class="card">
-          <h3>${t("expenseBreakdown")}</h3>
-          ${budgetDonutSvg(budget.categories, state.budgetView.currency)}
-        </article>
-      </section>
-
-      <section class="card records-table-card">
-        <h2>${t("expenseBreakdown")}</h2>
-        ${budget.categories.length ? `<div class="budget-list">${budget.categories.map((c) => `<div class="budget-item"><b>${escapeHtml(c.category)}</b><span>${fmtCurrency(c, state.budgetView.currency)} (${fmtCurrency(c, state.budgetView.currency === "TRY" ? "USD" : "TRY")})</span></div>`).join("")}</div>` : `<p class="muted">${t("noExpenseData")}</p>`}
-      </section>
+        <section class="viz-grid budget-viz-grid">
+          <article class="card">
+            <h3>${t("cumulativeNet")}</h3>
+            ${budgetCumulativeChartSvg(budget.series, state.budgetView.currency)}
+          </article>
+          <article class="card">
+            <h3>${t("expenseBreakdown")}</h3>
+            ${budgetDonutSvg(budget.categories, state.budgetView.currency)}
+            ${budgetCategoryListHtml(budget)}
+          </article>
+        </section>
+      </div>
       </div>
 
       <footer class="app-footer">${appFooterHtml()}</footer>
@@ -994,7 +1380,7 @@ function renderApp() {
 }
 
 function appFooterHtml() {
-  return `Created by <a id="creator-link" href="https://github.com/rugtumu" target="_blank" rel="noopener noreferrer">@rugtumu</a> · v${escapeHtml(APP_VERSION)}`;
+  return `Developed by <a id="creator-link" href="https://github.com/rugtumu" target="_blank" rel="noopener noreferrer">@rugtumu</a> · v${escapeHtml(APP_VERSION)}`;
 }
 
 function deriveClockLeadAssessment(clockInHours, leadTimeHours) {
@@ -1038,21 +1424,43 @@ function bindEvents(rowsDesc) {
   const customWrap = document.getElementById("custom-rate-wrap");
   const cancelEditBtn = document.getElementById("cancel-edit");
   const importCsvInput = document.getElementById("import-csv");
+  const importCsvAllInput = document.getElementById("import-csv-all");
   const expenseForm = document.getElementById("expense-form");
   const cancelExpenseEditBtn = document.getElementById("cancel-expense-edit");
   const themeToggle = document.getElementById("theme-toggle");
   const langToggle = document.getElementById("lang-toggle");
+  const settingsToggle = document.getElementById("settings-toggle");
   const refreshUsdTryBtn = document.getElementById("refresh-usd-try");
   const refreshUsdTryCardBtn = document.getElementById("refresh-usd-try-card");
+  const refreshUsdTryBudgetBtn = document.getElementById("refresh-usd-try-budget");
   const clockLeadForm = document.getElementById("clock-lead-form");
   const budgetRange = document.getElementById("budget-range");
   const budgetGranularity = document.getElementById("budget-granularity");
   const budgetCurrency = document.getElementById("budget-currency");
   const creatorLink = document.getElementById("creator-link");
+  const assetModal = document.getElementById("asset-modal");
+  const assetForm = document.getElementById("asset-form");
+  const openAssetModalBtn = document.getElementById("open-asset-modal");
+  const importInvestmentsInput = document.getElementById("import-investments");
+  const assetPriceFetchBtn = document.getElementById("asset-price-fetch");
+  const bybitSyncBtn = document.getElementById("sync-bybit");
+  const addExchangeKeyBtn = document.getElementById("add-exchange-key");
+  const exchangeKeysContainer = document.getElementById("exchange-keys");
+  const assetTypeSelect = document.getElementById("asset-type");
+  const assetNameInput = document.getElementById("asset-name");
+  const assetSectorInput = document.getElementById("asset-sector");
+  const assetCurrencySelect = document.getElementById("asset-currency");
 
   document.querySelectorAll(".tab[data-tab]").forEach((tabBtn) => {
     tabBtn.addEventListener("click", () => {
       state.activeTab = tabBtn.getAttribute("data-tab") || "dashboard";
+      renderApp();
+    });
+  });
+
+  document.querySelectorAll(".subtab[data-subtab]").forEach((tabBtn) => {
+    tabBtn.addEventListener("click", () => {
+      state.dataTab = tabBtn.getAttribute("data-subtab") || "income";
       renderApp();
     });
   });
@@ -1070,6 +1478,261 @@ function bindEvents(rowsDesc) {
   budgetCurrency?.addEventListener("change", () => {
     state.budgetView.currency = budgetCurrency.value === "USD" ? "USD" : "TRY";
     renderApp();
+  });
+
+  settingsToggle?.addEventListener("click", () => {
+    state.activeTab = "settings";
+    renderApp();
+  });
+
+  openAssetModalBtn?.addEventListener("click", () => {
+    state.editingInvestmentId = null;
+    openAssetModal();
+  });
+
+  assetModal?.querySelectorAll("[data-modal-close]").forEach((btn) => {
+    btn.addEventListener("click", () => closeAssetModal());
+  });
+
+  assetForm?.addEventListener("submit", async (e) => {
+    e.preventDefault();
+    const form = new FormData(assetForm);
+    const symbol = String(form.get("symbol") || "").trim().toUpperCase();
+    const assetType = String(form.get("assetType") || "Stock");
+    const name = String(form.get("name") || "").trim();
+    const sector = String(form.get("sector") || "").trim();
+    const currency = String(form.get("currency") || "USD").toUpperCase() === "TRY" ? "TRY" : "USD";
+    const amount = Number(form.get("amount"));
+    const avgCost = Number(form.get("avgCost"));
+    let price = Number(form.get("price"));
+
+    if (!symbol || !Number.isFinite(amount) || amount <= 0 || !Number.isFinite(avgCost) || avgCost <= 0) {
+      alert(t("invalidExpense"));
+      return;
+    }
+
+    if (!Number.isFinite(price) || price <= 0) {
+      try {
+        price = await fetchAssetPrice(symbol, assetType);
+      } catch (error) {
+        if (String(error?.message || "").includes("unsupported")) {
+          alert(t("priceFetchUnsupported"));
+        } else {
+          alert(t("priceFetchFailed"));
+        }
+        return;
+      }
+    }
+
+    if (!Number.isFinite(price) || price <= 0) {
+      alert(t("invalidExpense"));
+      return;
+    }
+
+    const payload = {
+      id: state.editingInvestmentId || uid(),
+      symbol,
+      name,
+      assetType,
+      sector,
+      currency,
+      amount: round(amount, 6),
+      avgCost: Number.isFinite(avgCost) ? round(avgCost, 4) : 0,
+      price: Number.isFinite(price) ? round(price, 4) : 0,
+      note: ""
+    };
+
+    state.investments = state.investments.filter((x) => x.id !== payload.id);
+    state.investments.push(payload);
+    await dataStore.upsertInvestment(payload);
+    closeAssetModal();
+    renderApp();
+  });
+
+  assetPriceFetchBtn?.addEventListener("click", async () => {
+    const symbol = String(document.getElementById("asset-symbol")?.value || "").trim().toUpperCase();
+    const assetType = String(document.getElementById("asset-type")?.value || "Stock");
+    if (!symbol) return;
+    try {
+      const price = await fetchAssetPrice(symbol, assetType);
+      const priceInput = document.getElementById("asset-price");
+      if (priceInput) priceInput.value = String(round(price, 4));
+    } catch (error) {
+      if (String(error?.message || "").includes("unsupported")) {
+        alert(t("priceFetchUnsupported"));
+      } else {
+        alert(t("priceFetchFailed"));
+      }
+    }
+  });
+
+  const symbolInput = document.getElementById("asset-symbol");
+  const markManual = (el, eventName = "input") => {
+    if (!el) return;
+    el.dataset.manual = "";
+    el?.addEventListener(eventName, () => {
+      el.dataset.manual = "1";
+    });
+  };
+  markManual(assetTypeSelect, "change");
+  markManual(assetCurrencySelect, "change");
+  markManual(assetNameInput);
+  markManual(assetSectorInput);
+
+  symbolInput?.addEventListener("blur", () => {
+    const symbol = String(symbolInput.value || "").trim().toUpperCase();
+    if (!symbol) return;
+    const info = lookupAssetInfo(symbol);
+    if (!info) return;
+
+    if (assetTypeSelect && !assetTypeSelect.dataset.manual) assetTypeSelect.value = info.assetType;
+    if (assetNameInput && !assetNameInput.dataset.manual && !assetNameInput.value) assetNameInput.value = info.name;
+    if (assetSectorInput && !assetSectorInput.dataset.manual && !assetSectorInput.value) assetSectorInput.value = info.sector || "";
+    if (assetCurrencySelect && !assetCurrencySelect.dataset.manual) assetCurrencySelect.value = info.currency;
+  });
+
+  document.querySelectorAll("[data-investment-action='edit']").forEach((btn) => {
+    btn.addEventListener("click", () => {
+      const id = btn.getAttribute("data-id");
+      const row = state.investments.find((x) => x.id === id);
+      if (!row) return;
+      state.editingInvestmentId = row.id;
+      openAssetModal(row);
+    });
+  });
+
+  document.querySelectorAll("[data-investment-action='delete']").forEach((btn) => {
+    btn.addEventListener("click", async () => {
+      const id = btn.getAttribute("data-id");
+      if (!confirm(t("deleteConfirm"))) return;
+      state.investments = state.investments.filter((x) => x.id !== id);
+      await dataStore.deleteInvestment(id);
+      renderApp();
+    });
+  });
+
+  document.querySelectorAll("[data-holdings-filter]").forEach((btn) => {
+    btn.addEventListener("click", () => {
+      const label = String(btn.getAttribute("data-holdings-filter") || "All");
+      state.investmentView.filterType = label;
+      renderApp();
+    });
+  });
+
+  document.querySelectorAll("[data-holdings-sort]").forEach((th) => {
+    th.addEventListener("click", () => {
+      const key = String(th.getAttribute("data-holdings-sort") || "value");
+      if (state.investmentView.sortKey === key) {
+        state.investmentView.sortDir = state.investmentView.sortDir === "asc" ? "desc" : "asc";
+      } else {
+        state.investmentView.sortKey = key;
+        state.investmentView.sortDir = "desc";
+      }
+      renderApp();
+    });
+  });
+
+  const holdingsSearch = document.getElementById("holdings-search");
+  holdingsSearch?.addEventListener("input", () => {
+    state.investmentView.query = holdingsSearch.value || "";
+    renderApp();
+  });
+
+  importInvestmentsInput?.addEventListener("change", async (e) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    const text = await file.text();
+    const result = parseInvestmentCsv(text);
+    if (!result.items.length) {
+      alert(t("csvInvalid"));
+      return;
+    }
+
+    const summary = t("parsedCount", { count: result.items.length });
+    const shouldReplace = confirm(`${summary} ${t("investmentReplaceConfirm")}`);
+    if (!shouldReplace) return;
+
+    state.investments = result.items;
+    state.editingInvestmentId = null;
+    await dataStore.replaceInvestments(result.items);
+    renderApp();
+  });
+
+  bybitSyncBtn?.addEventListener("click", async () => {
+    bybitSyncBtn.disabled = true;
+    const runSync = async () => {
+      const result = await invoke("bybit_fetch_investments", { vaultPassword: state.vaultPassword || null });
+      const items = Array.isArray(result) ? result.map(mapDbInvestmentToUi) : [];
+      state.investments = items;
+      await dataStore.replaceInvestments(items);
+      renderApp();
+    };
+
+    try {
+      await runSync();
+    } catch (error) {
+      console.error("Bybit sync failed:", error);
+      const msg = String(error?.message || "");
+      if (msg.includes("missing bybit credentials") && !state.vaultPassword) {
+        const entered = prompt(t("vaultPasswordPrompt"));
+        if (entered && entered.trim()) {
+          state.vaultPassword = entered.trim();
+          await refreshExchangeKeyStatus();
+          try {
+            await runSync();
+          } catch (retryError) {
+            const retryMsg = String(retryError?.message || "");
+            alert(retryMsg ? `${t("bybitSyncFailed")}\n${retryMsg}` : t("bybitSyncFailed"));
+          }
+        } else {
+          alert(t("bybitMissingCreds"));
+        }
+      } else if (msg.includes("missing bybit credentials")) {
+        alert(t("bybitMissingCreds"));
+      } else if (msg) {
+        alert(`${t("bybitSyncFailed")}\n${msg}`);
+      } else {
+        alert(t("bybitSyncFailed"));
+      }
+    } finally {
+      bybitSyncBtn.disabled = false;
+    }
+  });
+
+  addExchangeKeyBtn?.addEventListener("click", () => {
+    if (!exchangeKeysContainer) return;
+    const row = document.createElement("div");
+    row.className = "exchange-key-row";
+    row.innerHTML = `
+      <label>
+        ${t("exchange")}
+        <select data-exchange="exchange">
+          <option value="bybit">Bybit</option>
+          <option value="binance">Binance</option>
+          <option value="okx">OKX</option>
+          <option value="kucoin">KuCoin</option>
+        </select>
+      </label>
+      <label>
+        ${t("apiKey")}
+        <input type="password" data-exchange="apiKey" value="" />
+      </label>
+      <label>
+        ${t("apiSecret")}
+        <input type="password" data-exchange="apiSecret" value="" />
+      </label>
+      <button type="button" class="btn ghost" data-exchange-action="remove">${t("remove")}</button>
+      <span class="key-status">${t("keyMissing")}</span>
+    `;
+    exchangeKeysContainer.appendChild(row);
+  });
+
+  exchangeKeysContainer?.addEventListener("click", (e) => {
+    const target = e.target;
+    if (target?.matches("[data-exchange-action='remove']")) {
+      const row = target.closest(".exchange-key-row");
+      row?.remove();
+    }
   });
 
   creatorLink?.addEventListener("click", async (e) => {
@@ -1150,6 +1813,10 @@ function bindEvents(rowsDesc) {
     await handleUsdTryRefresh(refreshUsdTryCardBtn);
   });
 
+  refreshUsdTryBudgetBtn?.addEventListener("click", async () => {
+    await handleUsdTryRefresh(refreshUsdTryBudgetBtn);
+  });
+
   entryForm?.addEventListener("submit", async (e) => {
     e.preventDefault();
     const form = new FormData(entryForm);
@@ -1207,10 +1874,71 @@ function bindEvents(rowsDesc) {
     const weeklyTargetHours = Number(document.getElementById("setting-weekly-target").value);
     const monthlyTargetHours = Number(document.getElementById("setting-monthly-target").value);
     const language = document.getElementById("setting-language").value;
+    const vaultPasswordInput = document.getElementById("setting-vault-password");
+    const vaultPassword = String(vaultPasswordInput?.value || "").trim();
+    state.vaultPassword = vaultPassword;
+    const exchangeRows = Array.from(document.querySelectorAll(".exchange-key-row"));
+    const exchangeKeys = exchangeRows.map((row) => {
+      const exchange = String(row.querySelector("[data-exchange='exchange']")?.value || "").trim();
+      const apiKey = String(row.querySelector("[data-exchange='apiKey']")?.value || "").trim();
+      const apiSecret = String(row.querySelector("[data-exchange='apiSecret']")?.value || "").trim();
+      return { exchange, apiKey, apiSecret };
+    }).filter((row) => row.exchange);
+    const sanitizedKeys = exchangeKeys.map((row) => ({ exchange: row.exchange }));
+    const prevExchanges = (state.settings.exchangeKeys || []).map((x) => x.exchange);
+    const nextExchanges = sanitizedKeys.map((x) => x.exchange);
+
+    for (const row of exchangeKeys) {
+      if (row.apiKey || row.apiSecret) {
+        try {
+          await invoke("secure_store_exchange_key", {
+            exchange: row.exchange,
+            apiKey: row.apiKey,
+            apiSecret: row.apiSecret,
+            vaultPassword: vaultPassword || null
+          });
+          const verify = await invoke("secure_exchange_status", { exchanges: [row.exchange], vaultPassword: vaultPassword || null });
+          if (!verify || !verify[row.exchange]) {
+            if (!vaultPassword) {
+              throw new Error("key storage verify failed (vault password required)");
+            }
+            throw new Error("key storage verify failed");
+          }
+        } catch (error) {
+          console.error("exchange key save failed:", error);
+          const reason = String(error?.message || error || "").trim();
+          if (reason.includes("vault password required")) {
+            alert(t("vaultPasswordRequired"));
+          } else {
+            alert(reason ? t("exchangeKeySaveFailedWithReason", { reason }) : t("exchangeKeySaveFailed"));
+          }
+          return;
+        }
+      }
+    }
+
+    for (const exchange of prevExchanges) {
+      if (!nextExchanges.includes(exchange)) {
+        await invoke("secure_delete_exchange_key", { exchange });
+      }
+    }
+
+    const tabVisibilityInputs = Array.from(document.querySelectorAll("[data-tab-visibility]"));
+    const nextVisibleTabs = {};
+    for (const input of tabVisibilityInputs) {
+      const tab = String(input.getAttribute("data-tab-visibility") || "");
+      if (!tab) continue;
+      nextVisibleTabs[tab] = Boolean(input.checked);
+    }
+    if (!Object.values(nextVisibleTabs).some(Boolean)) {
+      nextVisibleTabs.dashboard = true;
+    }
 
     const values = [standardRateUsd, specialRateUsd, usdTry, weeklyTargetHours, monthlyTargetHours];
     if (values.some((v) => !Number.isFinite(v) || v < 0)) {
       alert(t("invalidSettings"));
+      await refreshExchangeKeyStatus();
+      renderApp();
       return;
     }
 
@@ -1222,10 +1950,13 @@ function bindEvents(rowsDesc) {
       cycleResetRule,
       weeklyTargetHours: round(weeklyTargetHours, 2),
       monthlyTargetHours: round(monthlyTargetHours, 2),
-      language: language === "en" ? "en" : "tr"
+      language: language === "en" ? "en" : "tr",
+      exchangeKeys: sanitizedKeys,
+      visibleTabs: normalizeVisibleTabs(nextVisibleTabs)
     };
 
     await dataStore.saveSettings(state.settings);
+    await refreshExchangeKeyStatus();
     renderApp();
   });
 
@@ -1321,6 +2052,41 @@ function bindEvents(rowsDesc) {
   document.getElementById("export-csv")?.addEventListener("click", async () => {
     const csv = buildExportCsv(rowsDesc);
     const filename = `work-logs-${todayIso()}.csv`;
+    await saveTextFile(filename, `\uFEFF${csv}`);
+  });
+
+  importCsvAllInput?.addEventListener("change", async (e) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+
+    const text = await file.text();
+    const result = parseCombinedCsv(text, state.settings);
+
+    if (!result.logs.length && !result.expenses.length) {
+      alert(t("dataCsvInvalid"));
+      return;
+    }
+
+    const summary = t("dataParsedSummary", { income: result.logs.length, expense: result.expenses.length });
+    const shouldReplace = confirm(`${summary} ${t("dataReplaceConfirm")}`);
+    if (!shouldReplace) return;
+
+    state.logs = result.logs;
+    state.expenses = result.expenses;
+    state.editingId = null;
+    state.editingExpenseId = null;
+    await dataStore.replaceLogs(result.logs);
+    await dataStore.replaceExpenses(result.expenses);
+    renderApp();
+
+    if (result.warnings.length) {
+      alert(`${t("importDoneWarnings")}\n- ${result.warnings.slice(0, 5).join("\n- ")}`);
+    }
+  });
+
+  document.getElementById("export-csv-all")?.addEventListener("click", async () => {
+    const csv = buildCombinedCsv(state.logs, state.expenses);
+    const filename = `work-data-${todayIso()}.csv`;
     await saveTextFile(filename, `\uFEFF${csv}`);
   });
 
@@ -2066,6 +2832,558 @@ function fmtCurrency(entry, currency = "TRY") {
   return fmtTry(entry.tryAmount);
 }
 
+function budgetCategoryListHtml(budget) {
+  if (!budget.categories.length) return `<p class="muted">${t("noExpenseData")}</p>`;
+  const baseTry = Number(budget.expenseTry) || 0;
+  const baseUsd = Number(budget.expenseUsd) || 0;
+  const base = baseTry || baseUsd || 0;
+
+  return `<div class="budget-list compact">${budget.categories.map((c) => {
+    const amount = baseTry ? c.tryAmount : c.usdAmount;
+    const pct = base > 0 ? Math.round((amount / base) * 100) : 0;
+    return `<div class="budget-item"><b>${escapeHtml(c.category)} (${pct}%)</b><span>${fmtTry(c.tryAmount)} (${fmtMoney(c.usdAmount)})</span></div>`;
+  }).join("")}</div>`;
+}
+
+function investmentPanelHtml() {
+  const data = deriveInvestment(state.investments, state.settings);
+  const view = state.investmentView;
+  const filterType = view.filterType || "All";
+  const query = (view.query || "").trim().toLowerCase();
+  let holdings = [...data.holdings];
+  if (filterType !== "All") {
+    holdings = holdings.filter((row) => row.assetType === filterType);
+  }
+  if (query) {
+    holdings = holdings.filter((row) => {
+      const hay = `${row.symbol} ${row.name} ${row.assetType} ${row.sector}`.toLowerCase();
+      return hay.includes(query);
+    });
+  }
+  const sortKey = view.sortKey || "value";
+  const sortDir = view.sortDir === "asc" ? 1 : -1;
+  const getSortValue = (row) => {
+    switch (sortKey) {
+      case "pnl":
+        return row.pnlUsd;
+      case "weight":
+        return row.weight;
+      case "name":
+        return row.name;
+      case "symbol":
+        return row.symbol;
+      default:
+        return row.valueUsd;
+    }
+  };
+  holdings.sort((a, b) => {
+    const va = getSortValue(a);
+    const vb = getSortValue(b);
+    if (typeof va === "string" || typeof vb === "string") {
+      return String(va).localeCompare(String(vb)) * sortDir;
+    }
+    return (Number(va) - Number(vb)) * sortDir;
+  });
+  const sortIndicator = (key) => (sortKey === key ? (view.sortDir === "asc" ? " ▲" : " ▼") : "");
+  const allocationTotal = data.allocation.reduce((sum, x) => sum + x.value, 0) || 1;
+
+  return `
+    <section class="investment-kpi-grid">
+      ${investmentKpiCard(t("totalValue"), `$${fmtNumber(data.overview.totalUsd, 2)}`, `₺${fmtNumber(data.overview.totalTry, 2)}`, "accent-gold", "currency")}
+      ${investmentKpiCard(t("investments"), `$${fmtNumber(data.overview.investmentsUsd, 2)}`, `${data.overview.investmentsCount} varlık`, "accent-gold", "briefcase")}
+      ${investmentKpiCard(t("cash"), `$${fmtNumber(data.overview.cashUsd, 2)}`, "USD + TRY toplam", "accent-green", "cash")}
+      ${investmentKpiCard(t("profitLoss"), `${data.overview.pnlUsd < 0 ? "-" : ""}$${fmtNumber(Math.abs(data.overview.pnlUsd), 2)}`, `${fmtNumber(data.overview.pnlPct, 2)}%`, data.overview.pnlUsd < 0 ? "accent-red" : "accent-green", "trend")}
+      ${investmentKpiCard(t("cashOut"), `$${fmtNumber(data.overview.cashOutUsd, 2)}`, `Düzeltilmiş: $${fmtNumber(data.overview.cashOutAdjustedUsd, 2)}`, "accent-purple", "wallet")}
+    </section>
+
+    <section class="investment-stat-grid">
+      ${data.stats.map((stat) => `
+        <article class="card stat-card ${stat.cls || ""}">
+          <p class="stat-title">${t(stat.key)}</p>
+          <p class="stat-value">${escapeHtml(stat.label)}</p>
+          ${stat.value ? `<small class="muted">${escapeHtml(stat.value)}</small>` : ""}
+        </article>
+      `).join("")}
+    </section>
+
+    <section class="investment-main-grid">
+      <article class="card investment-performance">
+        <div class="card-header">
+          <h3>${t("performanceHistory")}</h3>
+          <span class="chip">vs S&P 500</span>
+        </div>
+        ${investmentPerformanceSvg(data.performance)}
+      </article>
+      <article class="card investment-allocation">
+        <div class="card-header">
+          <h3>${t("allocation")}</h3>
+        </div>
+        <div class="allocation-grid">
+          ${investmentAllocationDonut(data.allocation, allocationTotal)}
+          <div class="allocation-bars">
+            ${data.allocation.map((item) => {
+              const pct = Math.round((item.value / allocationTotal) * 1000) / 10;
+              return `
+                <div class="allocation-bar">
+                  <div>
+                    <b>${escapeHtml(item.label)}</b>
+                    <span class="muted">${pct}%</span>
+                  </div>
+                  <div class="allocation-track">
+                    <span style="width:${pct}%; background:${item.color}"></span>
+                  </div>
+                </div>
+              `;
+            }).join("")}
+          </div>
+        </div>
+      </article>
+    </section>
+
+    <section class="card investment-holdings">
+      <div class="card-header">
+        <div>
+          <h3>${t("holdings")} (${holdings.length})</h3>
+          <small class="muted">Varlıklarınızı yönetin</small>
+        </div>
+        <div class="holding-cta">
+          <button id="sync-bybit" class="btn ghost">${t("bybitSync")}</button>
+          <label class="btn ghost file-btn">
+            ${t("importHoldings")}
+            <input id="import-investments" type="file" accept=".csv,text/csv" />
+          </label>
+          <button id="open-asset-modal" class="btn primary">${t("addAsset")}</button>
+        </div>
+      </div>
+      <div class="holdings-controls">
+        <div class="chips">
+          ${["All", "Stock", "ETF", "BIST", "TEFAS", "Crypto", "Bond", "Commodity", "Cash"].map((label) => `
+            <button class="chip ${filterType === label ? "active" : ""}" data-holdings-filter="${label}">${label}</button>
+          `).join("")}
+        </div>
+        <div class="holdings-toolbar">
+          <label>
+            ${t("holdingsSearch")}
+            <input id="holdings-search" type="text" value="${escapeHtml(view.query || "")}" placeholder="${t("holdingsSearch")}" />
+          </label>
+        </div>
+      </div>
+      <div class="table-wrap">
+        <table>
+          <thead>
+            <tr>
+              <th class="sortable" data-holdings-sort="symbol">${t("symbol")}${sortIndicator("symbol")}</th>
+              <th>${t("assetType")}</th>
+              <th>${t("amount")}</th>
+              <th>${t("buyPrice")}</th>
+              <th>${t("currentPrice")}</th>
+              <th class="sortable" data-holdings-sort="value">${t("value") || "Değer"}${sortIndicator("value")}</th>
+              <th class="sortable" data-holdings-sort="weight">Ağırlık${sortIndicator("weight")}</th>
+              <th class="sortable" data-holdings-sort="pnl">Kar %${sortIndicator("pnl")}</th>
+              <th class="sortable" data-holdings-sort="pnl">Kar $${sortIndicator("pnl")}</th>
+              <th>${t("action")}</th>
+            </tr>
+          </thead>
+          <tbody>
+            ${holdings.length ? holdings.map((row) => `
+              <tr>
+                <td><b>${escapeHtml(row.symbol)}</b></td>
+                <td><span class="pill">${escapeHtml(row.assetType)}</span></td>
+                <td>${fmtNumber(row.amount, 6)}</td>
+                <td>${row.costMissing ? "-" : fmtMoney(row.avgCost)}${row.costMissing ? ` <span class="warn-pill">${t("costMissing")}</span>` : ""}</td>
+                <td>${fmtMoney(row.price)}</td>
+                <td><b>${fmtMoney(row.valueUsd)}</b><br/><small class="muted">(${fmtTry(row.valueTry)})</small></td>
+                <td>${fmtNumber(row.weight, 1)}%</td>
+                <td class="${row.pnlPct < 0 ? "neg" : "pos"}">${fmtNumber(row.pnlPct, 2)}%</td>
+                <td class="${row.pnlUsd < 0 ? "neg" : "pos"}">${row.pnlUsd < 0 ? "-" : ""}$${fmtNumber(Math.abs(row.pnlUsd), 2)}</td>
+                <td class="row-actions">
+                  <button class="btn tiny ghost icon-btn" data-investment-action="edit" data-id="${row.id}" title="Edit">${editIcon()}</button>
+                  <button class="btn tiny ghost icon-btn" data-investment-action="delete" data-id="${row.id}" title="Delete">${trashIcon()}</button>
+                </td>
+              </tr>
+            `).join("") : `<tr><td colspan="10" class="empty">${t("noData")}</td></tr>`}
+          </tbody>
+        </table>
+      </div>
+    </section>
+
+    ${investmentModalHtml()}
+  `;
+}
+
+function investmentKpiCard(title, value, sub, accent, icon) {
+  return `
+    <article class="card kpi-card ${accent}">
+      <div class="kpi-head">
+        <p>${escapeHtml(title)}</p>
+        <span class="kpi-icon">${investmentIcon(icon)}</span>
+      </div>
+      <div class="kpi-value">${escapeHtml(value)}</div>
+      <small class="muted">${escapeHtml(sub)}</small>
+    </article>
+  `;
+}
+
+function investmentIcon(type) {
+  const icons = {
+    currency: "₺",
+    briefcase: "⦿",
+    cash: "₿",
+    trend: "↘",
+    wallet: "▣"
+  };
+  return icons[type] || "●";
+}
+
+function investmentPerformanceSvg(series) {
+  if (!series.length) return `<div class="empty muted">${t("noData")}</div>`;
+  const width = 720;
+  const height = 240;
+  const pad = { top: 20, right: 20, bottom: 26, left: 40 };
+  const innerW = width - pad.left - pad.right;
+  const innerH = height - pad.top - pad.bottom;
+  const maxV = Math.max(...series.map((s) => s.value), 1);
+  const minV = Math.min(...series.map((s) => s.value), 0);
+  const range = Math.max(1, maxV - minV);
+
+  const toX = (i) => pad.left + (i / (series.length - 1)) * innerW;
+  const toY = (v) => pad.top + innerH - ((v - minV) / range) * innerH;
+
+  const line = series.map((s, i) => `${toX(i)},${toY(s.value)}`).join(" ");
+  const area = `${pad.left},${pad.top + innerH} ${line} ${pad.left + innerW},${pad.top + innerH}`;
+
+  const xLabels = series.map((s, i) => `
+    <text class="axis-x" x="${toX(i)}" y="${height - 8}" text-anchor="middle">${escapeHtml(s.label)}</text>
+  `).join("");
+
+  return `
+    <svg class="chart investment-line-chart" viewBox="0 0 ${width} ${height}" role="img">
+      <defs>
+        <linearGradient id="invLineGrad" x1="0" y1="0" x2="0" y2="1">
+          <stop offset="0%" stop-color="#ffb347" stop-opacity="0.35" />
+          <stop offset="100%" stop-color="#ffb347" stop-opacity="0" />
+        </linearGradient>
+      </defs>
+      <polyline class="inv-line" points="${line}" />
+      <polygon class="inv-area" points="${area}" />
+      ${xLabels}
+    </svg>
+  `;
+}
+
+function investmentAllocationDonut(items, total) {
+  const size = 180;
+  const stroke = 18;
+  const radius = (size - stroke) / 2;
+  const circumference = 2 * Math.PI * radius;
+  let offset = 0;
+
+  const rings = items.map((item) => {
+    const pct = item.value / total;
+    const dash = pct * circumference;
+    const ring = `
+      <circle
+        cx="${size / 2}"
+        cy="${size / 2}"
+        r="${radius}"
+        fill="none"
+        stroke="${item.color}"
+        stroke-width="${stroke}"
+        stroke-dasharray="${dash} ${circumference - dash}"
+        stroke-dashoffset="${-offset}"
+        stroke-linecap="round"
+      />
+    `;
+    offset += dash;
+    return ring;
+  }).join("");
+
+  return `
+    <div class="allocation-donut">
+      <svg viewBox="0 0 ${size} ${size}" role="img">
+        ${rings}
+      </svg>
+      <div class="donut-center">
+        <small class="muted">TOTAL</small>
+        <b>${fmtNumber(total, 2)}</b>
+      </div>
+    </div>
+  `;
+}
+
+function investmentModalHtml() {
+  return `
+    <div id="asset-modal" class="modal hidden" role="dialog" aria-modal="true">
+      <div class="modal-overlay" data-modal-close="true"></div>
+      <div class="modal-card">
+        <div class="modal-header">
+          <h3>${t("addAssetTitle")}</h3>
+          <button type="button" class="btn ghost icon-btn" data-modal-close="true" aria-label="${t("cancel")}">×</button>
+        </div>
+        <form id="asset-form" class="form-grid">
+          <label>
+            ${t("symbol")} *
+            <input id="asset-symbol" name="symbol" type="text" placeholder="AAPL, BTC..." required />
+          </label>
+          <label>
+            ${t("assetType")}
+            <select id="asset-type" name="assetType">
+              <option value="Stock">Stock</option>
+              <option value="ETF">ETF</option>
+              <option value="BIST">BIST</option>
+              <option value="TEFAS">TEFAS</option>
+              <option value="Crypto">Crypto</option>
+              <option value="Bond">Bond</option>
+              <option value="Commodity">Commodity</option>
+              <option value="Cash">Cash</option>
+            </select>
+          </label>
+          <label>
+            ${t("name")}
+            <input id="asset-name" name="name" type="text" placeholder="${t("name")}" />
+          </label>
+          <label>
+            ${t("sector")}
+            <input id="asset-sector" name="sector" type="text" placeholder="${t("sector")}" />
+          </label>
+          <label>
+            ${t("currency")}
+            <select id="asset-currency" name="currency">
+              <option value="USD">USD</option>
+              <option value="TRY">TRY</option>
+            </select>
+          </label>
+          <label>
+            ${t("amount")} *
+            <input id="asset-amount" name="amount" type="number" min="0" step="0.0001" required />
+          </label>
+          <label>
+            ${t("buyPrice")} ($)
+            <input id="asset-avg-cost" name="avgCost" type="number" min="0" step="0.01" required />
+          </label>
+          <label>
+            ${t("currentPrice")} ($)
+            <input id="asset-price" name="price" type="number" min="0" step="0.01" required readonly />
+          </label>
+          <div class="full inline-actions">
+            <button type="button" id="asset-price-fetch" class="btn ghost">${t("fetchPrice")}</button>
+          </div>
+          <div class="form-actions full">
+            <button type="button" class="btn ghost" data-modal-close="true">${t("cancel")}</button>
+            <button type="submit" class="btn primary">${t("addAsset")}</button>
+          </div>
+        </form>
+      </div>
+    </div>
+  `;
+}
+
+function deriveInvestment(investments, settings) {
+  const usdTry = Number(settings.usdTry) || 1;
+  const holdings = (investments || []).map((inv) => normalizeInvestment(inv, usdTry));
+  const totalValueUsd = holdings.reduce((sum, h) => sum + h.valueUsd, 0);
+  const totalCostUsd = holdings.reduce((sum, h) => sum + h.costUsd, 0);
+  const cashUsd = holdings.filter((h) => h.isCash).reduce((sum, h) => sum + h.valueUsd, 0);
+  const investmentsUsd = totalValueUsd - cashUsd;
+  const pnlUsd = totalValueUsd - totalCostUsd;
+  const pnlPct = totalCostUsd > 0 ? (pnlUsd / totalCostUsd) * 100 : 0;
+
+  const nonCash = holdings.filter((h) => !h.isCash);
+  const best = nonCash.length ? nonCash.reduce((a, b) => (b.pnlPct > a.pnlPct ? b : a), nonCash[0]) : null;
+
+  const perfReturns = buildPerformanceReturns(totalValueUsd);
+  const baseReturns = perfReturns.length ? perfReturns : nonCash.map((h) => h.pnlPct / 100).filter((v) => Number.isFinite(v));
+  const avgReturn = baseReturns.length ? avg(baseReturns) : 0;
+  const volReturn = baseReturns.length ? stddev(baseReturns) : 0;
+  const downside = baseReturns.filter((v) => v < 0);
+  const downsideVol = downside.length ? stddev(downside) : 0;
+  const sharpe = volReturn ? avgReturn / volReturn : 0;
+  const sortino = downsideVol ? avgReturn / downsideVol : 0;
+  const maxDrawdown = baseReturns.length ? Math.min(...baseReturns) * 100 : 0;
+
+  const stats = [
+    { key: "best", label: best ? `${best.symbol} ${fmtNumber(best.pnlPct, 2)}%` : "-", value: "", cls: best && best.pnlPct < 0 ? "neg" : "pos" },
+    { key: "beta", label: volReturn ? fmtNumber(1 + volReturn, 2) : "0.00", value: "" },
+    { key: "sharpe", label: fmtNumber(sharpe, 2), value: "" },
+    { key: "sortino", label: fmtNumber(sortino, 2), value: "", cls: sortino < 0 ? "neg" : "pos" },
+    { key: "volatility", label: `${fmtNumber(volReturn * 100, 1)}%`, value: "" },
+    { key: "maxDrawdown", label: `${fmtNumber(maxDrawdown, 1)}%`, value: "", cls: maxDrawdown < 0 ? "neg" : "pos" }
+  ];
+
+  const allocation = buildInvestmentAllocation(holdings);
+  const performance = buildInvestmentPerformance(totalValueUsd);
+  const weighted = holdings.map((h) => ({ ...h, weight: totalValueUsd ? (h.valueUsd / totalValueUsd) * 100 : 0 }));
+
+  return {
+    overview: {
+      totalUsd: round(totalValueUsd, 2),
+      totalTry: round(totalValueUsd * usdTry, 2),
+      investmentsUsd: round(investmentsUsd, 2),
+      investmentsCount: nonCash.length,
+      cashUsd: round(cashUsd, 2),
+      pnlUsd: round(pnlUsd, 2),
+      pnlPct: round(pnlPct, 2),
+      cashOutUsd: 0,
+      cashOutAdjustedUsd: round(totalValueUsd, 2)
+    },
+    stats,
+    allocation,
+    performance,
+    holdings: weighted.map((h) => ({
+      id: h.id,
+      symbol: h.symbol,
+      name: h.name || h.symbol,
+      assetType: h.assetType,
+      amount: h.amount,
+      avgCost: h.avgCost,
+      price: h.price,
+      valueUsd: h.valueUsd,
+      valueTry: h.valueTry,
+      weight: h.weight,
+      pnlPct: h.pnlPct,
+      pnlUsd: h.pnlUsd
+    }))
+  };
+}
+
+function normalizeInvestment(inv, usdTry) {
+  const amount = Number(inv.amount) || 0;
+  const avgCost = Number(inv.avgCost) || 0;
+  const price = Number(inv.price) || 0;
+  const assetType = String(inv.assetType || "");
+  const currency = String(inv.currency || "USD").toUpperCase() === "TRY" ? "TRY" : "USD";
+  const isCash = isCashType(assetType);
+
+  const safeAvgCost = avgCost > 0 ? avgCost : price;
+  const safePrice = price > 0 ? price : safeAvgCost;
+  const cost = safeAvgCost * amount;
+  const value = safePrice * amount;
+  const costMissing = !isCash && avgCost <= 0;
+
+  const costUsd = currency === "USD" ? cost : cost / usdTry;
+  const valueUsd = currency === "USD" ? value : value / usdTry;
+  const pnlUsd = valueUsd - costUsd;
+  const pnlPct = costUsd > 0 ? (pnlUsd / costUsd) * 100 : 0;
+
+  return {
+    ...inv,
+    assetType,
+    currency,
+    isCash,
+    costUsd: round(costUsd, 2),
+    valueUsd: round(valueUsd, 2),
+    valueTry: round(valueUsd * usdTry, 2),
+    pnlUsd: round(pnlUsd, 2),
+    pnlPct: round(pnlPct, 2),
+    costMissing
+  };
+}
+
+function isCashType(assetType) {
+  const tpe = String(assetType || "").toLocaleLowerCase("tr");
+  return tpe.includes("cash") || tpe.includes("nakit");
+}
+
+function buildInvestmentAllocation(holdings) {
+  const colors = ["#32c5ff", "#ffd24a", "#ff6b6b", "#2ec4b6", "#9b5cff", "#ffa500"];
+  const map = new Map();
+  for (const h of holdings) {
+    const label = h.isCash ? "Cash" : h.symbol || h.assetType || "Asset";
+    const prev = map.get(label) || { label, value: 0 };
+    prev.value += h.valueUsd;
+    map.set(label, prev);
+  }
+  return [...map.values()].map((item, idx) => ({ ...item, color: colors[idx % colors.length] }));
+}
+
+function buildInvestmentPerformance(totalValueUsd) {
+  if (!Number.isFinite(totalValueUsd) || totalValueUsd <= 0) return [];
+  const base = totalValueUsd;
+  const points = [
+    { label: "23 Oca", value: round(base * 0.92, 2) },
+    { label: "30 Oca", value: round(base * 0.94, 2) },
+    { label: "6 Şub", value: round(base * 1.1, 2) },
+    { label: "20 Şub", value: round(base * 0.98, 2) },
+    { label: "27 Şub", value: round(base, 2) },
+    { label: "6 Mar", value: round(base, 2) },
+    { label: "13 Mar", value: round(base, 2) }
+  ];
+  return points;
+}
+
+function buildPerformanceReturns(totalValueUsd) {
+  const series = buildInvestmentPerformance(totalValueUsd);
+  if (series.length < 2) return [];
+  const returns = [];
+  for (let i = 1; i < series.length; i += 1) {
+    const prev = series[i - 1].value;
+    const next = series[i].value;
+    if (!prev) continue;
+    returns.push((next - prev) / prev);
+  }
+  return returns;
+}
+
+function openAssetModal(row) {
+  const modal = document.getElementById("asset-modal");
+  if (!modal) return;
+  modal.classList.remove("hidden");
+  const form = modal.querySelector("#asset-form");
+  if (!form) return;
+
+  if (row) {
+    form.querySelector("#asset-symbol").value = row.symbol || "";
+    form.querySelector("#asset-type").value = row.assetType || "Stock";
+    form.querySelector("#asset-name").value = row.name || "";
+    form.querySelector("#asset-sector").value = row.sector || "";
+    form.querySelector("#asset-currency").value = row.currency || "USD";
+    form.querySelector("#asset-amount").value = String(row.amount ?? "");
+    form.querySelector("#asset-avg-cost").value = String(row.avgCost ?? "");
+    form.querySelector("#asset-price").value = String(row.price ?? "");
+    form.querySelectorAll("[data-manual]").forEach((el) => {
+      el.dataset.manual = "1";
+    });
+  } else {
+    form.reset();
+    form.querySelectorAll("[data-manual]").forEach((el) => {
+      el.dataset.manual = "";
+    });
+  }
+}
+
+function closeAssetModal() {
+  const modal = document.getElementById("asset-modal");
+  if (!modal) return;
+  modal.classList.add("hidden");
+  const form = modal.querySelector("#asset-form");
+  if (form) form.reset();
+  state.editingInvestmentId = null;
+}
+
+async function fetchAssetPrice(symbol, assetType) {
+  const type = String(assetType || "").toLowerCase();
+  if (type.includes("crypto")) {
+    return fetchCryptoSpotPrice(symbol);
+  }
+  if (type.includes("cash")) {
+    return 1;
+  }
+  throw new Error("unsupported asset type");
+}
+
+async function refreshExchangeKeyStatus() {
+  if (!isTauriRuntime()) return;
+  const exchanges = (state.settings.exchangeKeys || []).map((x) => x.exchange);
+  const list = exchanges.length ? exchanges : ["bybit"];
+  if (!list.length) return;
+  try {
+    const status = await invoke("secure_exchange_status", { exchanges: list, vaultPassword: state.vaultPassword || null });
+    state.exchangeKeyStatus = status || {};
+  } catch (error) {
+    console.error("exchange key status failed:", error);
+  }
+}
+
 function progressBar(pct) {
   const safe = Math.max(0, Math.min(100, pct));
   const over50 = safe > 50 ? " over-50" : "";
@@ -2369,6 +3687,17 @@ async function fetchUsdTryRate() {
   throw new Error("No live rate source available");
 }
 
+async function fetchCryptoSpotPrice(symbol) {
+  const pair = `${symbol}-USD`;
+  const url = `https://api.coinbase.com/v2/prices/${encodeURIComponent(pair)}/spot`;
+  const res = await fetch(url, { cache: "no-store" });
+  if (!res.ok) throw new Error("Price fetch failed");
+  const data = await res.json();
+  const price = Number(data?.data?.amount);
+  if (!Number.isFinite(price) || price <= 0) throw new Error("Invalid price");
+  return price;
+}
+
 function themeSunIcon() {
   return `<svg viewBox="0 0 24 24" aria-hidden="true">
     <circle cx="12" cy="12" r="4" fill="none" stroke="currentColor" stroke-width="1.8"/>
@@ -2394,6 +3723,13 @@ function themeMoonIcon() {
 function refreshIcon() {
   return `<svg viewBox="0 0 24 24" aria-hidden="true">
     <path fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" d="M20 5v5h-5M4 19v-5h5M6.8 9A7 7 0 0 1 19.2 10M17.2 15A7 7 0 0 1 4.8 14"/>
+  </svg>`;
+}
+
+function settingsIcon() {
+  return `<svg viewBox="0 0 24 24" aria-hidden="true">
+    <path fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" d="M10.2 3.4l1.6-.9 1.6.9.7 1.8 2 .6 1.7-1 1.3 1.3-1 1.7.6 2 1.8.7.9 1.6-.9 1.6-1.8.7-.6 2 1 1.7-1.3 1.3-1.7-1-2 .6-.7 1.8-1.6.9-1.6-.9-.7-1.8-2-.6-1.7 1-1.3-1.3 1-1.7-.6-2-1.8-.7-.9-1.6.9-1.6 1.8-.7.6-2-1-1.7 1.3-1.3 1.7 1 2-.6z"/>
+    <circle cx="12" cy="12" r="2.8" fill="none" stroke="currentColor" stroke-width="1.8"/>
   </svg>`;
 }
 
@@ -2434,6 +3770,231 @@ function buildExportCsv(rowsDesc) {
   }
 
   return lines.join("\n");
+}
+
+function buildCombinedCsv(logs, expenses) {
+  const header = [
+    "type",
+    "date",
+    "hours",
+    "rate_usd",
+    "usd_try",
+    "note",
+    "amount",
+    "currency",
+    "category"
+  ];
+
+  const incomeRows = (logs || []).map((row) => ({
+    type: "income",
+    date: row.date,
+    hours: row.hours,
+    rateUsd: row.rateUsd,
+    usdTry: row.usdTry,
+    note: row.note || "",
+    amount: "",
+    currency: "",
+    category: ""
+  }));
+
+  const expenseRows = (expenses || []).map((row) => ({
+    type: "expense",
+    date: row.date,
+    hours: "",
+    rateUsd: "",
+    usdTry: "",
+    note: row.note || "",
+    amount: row.amount,
+    currency: row.currency,
+    category: row.category || ""
+  }));
+
+  const combined = [...incomeRows, ...expenseRows].sort((a, b) => {
+    const dateCmp = String(a.date || "").localeCompare(String(b.date || ""));
+    if (dateCmp !== 0) return dateCmp;
+    return a.type.localeCompare(b.type);
+  });
+
+  const lines = [header.join(",")];
+  for (const row of combined) {
+    lines.push(
+      [
+        row.type,
+        row.date,
+        row.hours,
+        row.rateUsd,
+        row.usdTry,
+        csvCell(row.note),
+        row.amount,
+        row.currency,
+        csvCell(row.category)
+      ].join(",")
+    );
+  }
+
+  return lines.join("\n");
+}
+
+function parseCombinedCsv(text, settings) {
+  const rows = parseCsv(text);
+  if (rows.length < 2) return { logs: [], expenses: [], warnings: [t("csvEmpty")] };
+
+  const headers = rows[0].map((x) => String(x || "").trim());
+  const map = buildHeaderMap(headers);
+
+  const hasType = mapHas(map, ["type", "tur", "tip"]);
+  const hasDate = mapHas(map, ["date", "tarih"]);
+  if (!hasType || !hasDate) {
+    return { logs: [], expenses: [], warnings: [t("expectedColumns")] };
+  }
+
+  const warnings = [];
+  const logs = [];
+  const expenses = [];
+
+  const idxType = pickHeaderIndex(map, ["type", "tur", "tip"], "first");
+  const idxDate = pickHeaderIndex(map, ["date", "tarih"], "first");
+  const idxHours = pickHeaderIndex(map, ["hours", "saat", "gunluk_saat", "gunluk"]);
+  const idxRate = pickHeaderIndex(map, ["rate_usd", "rate"]);
+  const idxUsdTry = pickHeaderIndex(map, ["usd_try", "usdtry", "usd_tl", "usd_tl_kur"]);
+  const idxNote = pickHeaderIndex(map, ["note", "not"]);
+  const idxAmount = pickHeaderIndex(map, ["amount", "tutar"]);
+  const idxCurrency = pickHeaderIndex(map, ["currency", "para_birimi"]);
+  const idxCategory = pickHeaderIndex(map, ["category", "kategori"]);
+
+  for (let i = 1; i < rows.length; i += 1) {
+    const row = rows[i];
+    if (!row?.length) continue;
+
+    const typeRaw = String(row[idxType] || "").trim().toLocaleLowerCase("tr");
+    const type = typeRaw === "gelir" || typeRaw === "income" || typeRaw === "inc"
+      ? "income"
+      : typeRaw === "gider" || typeRaw === "expense" || typeRaw === "exp"
+        ? "expense"
+        : "";
+
+    const date = normalizeDate(row[idxDate]);
+    if (!type || !date) {
+      warnings.push(t("rowInvalidDate", { row: i + 1 }));
+      continue;
+    }
+
+    if (type === "income") {
+      const hours = toNum(idxHours >= 0 ? row[idxHours] : NaN);
+      if (!Number.isFinite(hours) || hours < 0 || hours > 24) {
+        warnings.push(t("rowInvalidHours", { row: i + 1, value: row[idxHours] }));
+        continue;
+      }
+
+      const rateUsd = toNum(idxRate >= 0 ? row[idxRate] : settings.standardRateUsd);
+      const usdTry = toNum(idxUsdTry >= 0 ? row[idxUsdTry] : settings.usdTry);
+
+      logs.push({
+        id: uid(),
+        date,
+        hours: round(hours, 2),
+        rateUsd: round(Number.isFinite(rateUsd) ? rateUsd : settings.standardRateUsd, 5),
+        usdTry: round(Number.isFinite(usdTry) ? usdTry : settings.usdTry, 5),
+        note: idxNote >= 0 ? String(row[idxNote] || "") : "",
+        cycleId: date.slice(0, 7)
+      });
+    } else if (type === "expense") {
+      const amount = toNum(idxAmount >= 0 ? row[idxAmount] : NaN);
+      const currency = String(idxCurrency >= 0 ? row[idxCurrency] : "USD").trim().toUpperCase();
+      const category = String(idxCategory >= 0 ? row[idxCategory] : "").trim() || "Diğer";
+
+      if (!Number.isFinite(amount) || amount < 0 || !["USD", "TRY"].includes(currency)) {
+        warnings.push(t("rowInvalidAmount", { row: i + 1, value: row[idxAmount] }));
+        continue;
+      }
+
+      expenses.push({
+        id: uid(),
+        date,
+        amount: round(amount, 2),
+        currency,
+        category,
+        note: idxNote >= 0 ? String(row[idxNote] || "") : ""
+      });
+    }
+  }
+
+  const incomeByDate = new Map();
+  for (const log of logs) {
+    if (incomeByDate.has(log.date)) warnings.push(t("duplicateDateWarn", { date: log.date }));
+    incomeByDate.set(log.date, log);
+  }
+
+  return {
+    logs: [...incomeByDate.values()].sort((a, b) => a.date.localeCompare(b.date)),
+    expenses: [...expenses].sort((a, b) => b.date.localeCompare(a.date)),
+    warnings
+  };
+}
+
+function parseInvestmentCsv(text) {
+  const rows = parseCsv(text);
+  if (rows.length < 2) return { items: [], warnings: [t("csvEmpty")] };
+
+  const headers = rows[0].map((x) => String(x || "").trim());
+  const map = buildHeaderMap(headers);
+
+  const hasSymbol = mapHas(map, ["symbol", "sembol"]);
+  const hasAmount = mapHas(map, ["amount", "adet"]);
+  if (!hasSymbol) {
+    return { items: [], warnings: [t("expectedColumns")] };
+  }
+
+  const idxSymbol = pickHeaderIndex(map, ["symbol", "sembol"], "first");
+  const idxName = pickHeaderIndex(map, ["name", "isim"]);
+  const idxType = pickHeaderIndex(map, ["type", "tip"]);
+  const idxSector = pickHeaderIndex(map, ["sector", "sektor"]);
+  const idxCurrency = pickHeaderIndex(map, ["currency", "para_birimi"]);
+  const idxAmount = pickHeaderIndex(map, ["amount", "adet"]);
+  const idxAvgCost = pickHeaderIndex(map, ["avg_cost", "ort_maliyet", "maliyet"]);
+  const idxPrice = pickHeaderIndex(map, ["price", "fiyat"]);
+
+  const warnings = [];
+  const items = [];
+
+  for (let i = 1; i < rows.length; i += 1) {
+    const row = rows[i];
+    if (!row?.length) continue;
+    const symbol = String(row[idxSymbol] || "").trim();
+    const amount = idxAmount >= 0 ? toNum(row[idxAmount]) : 1;
+    if (!symbol || !Number.isFinite(amount) || amount <= 0) {
+      warnings.push(t("rowInvalidAmount", { row: i + 1, value: row[idxAmount] }));
+      continue;
+    }
+
+    const currency = String(idxCurrency >= 0 ? row[idxCurrency] : "USD").toUpperCase() === "TRY" ? "TRY" : "USD";
+    items.push({
+      id: uid(),
+      symbol: symbol.toUpperCase(),
+      name: String(idxName >= 0 ? row[idxName] : "").trim(),
+      assetType: String(idxType >= 0 ? row[idxType] : "Stock").trim() || "Stock",
+      sector: String(idxSector >= 0 ? row[idxSector] : "").trim(),
+      currency,
+      amount: round(amount, 6),
+      avgCost: round(toNum(idxAvgCost >= 0 ? row[idxAvgCost] : 0), 4),
+      price: round(toNum(idxPrice >= 0 ? row[idxPrice] : 0), 4),
+      note: ""
+    });
+  }
+
+  return { items, warnings };
+}
+
+function lookupAssetInfo(symbol) {
+  const map = {
+    BTC: { assetType: "Crypto", name: "Bitcoin", sector: "Crypto", currency: "USD" },
+    ETH: { assetType: "Crypto", name: "Ethereum", sector: "Crypto", currency: "USD" },
+    USDT: { assetType: "Cash", name: "Tether", sector: "Cash", currency: "USD" },
+    USDC: { assetType: "Cash", name: "USD Coin", sector: "Cash", currency: "USD" },
+    TRY: { assetType: "Cash", name: "Turkish Lira", sector: "Cash", currency: "TRY" },
+    USD: { assetType: "Cash", name: "US Dollar", sector: "Cash", currency: "USD" }
+  };
+  return map[symbol] || null;
 }
 
 function parseImportedCsv(text, settings) {
@@ -2696,6 +4257,13 @@ function csvCell(value) {
 function avg(list) {
   if (!list.length) return 0;
   return list.reduce((sum, x) => sum + x, 0) / list.length;
+}
+
+function stddev(list) {
+  if (list.length < 2) return 0;
+  const mean = avg(list);
+  const variance = avg(list.map((x) => (x - mean) ** 2));
+  return Math.sqrt(variance);
 }
 
 function deltaPct(curr, prev) {

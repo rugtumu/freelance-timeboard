@@ -2,6 +2,8 @@
 
 mod db;
 
+use tauri::Manager;
+
 #[tauri::command]
 fn open_external_url(url: String) -> Result<(), String> {
     webbrowser::open(&url)
@@ -14,6 +16,10 @@ pub fn run() {
     tauri::Builder::default()
         .setup(|app| {
             db::init_db(app.handle())?;
+            #[cfg(debug_assertions)]
+            if let Some(window) = app.get_webview_window("main") {
+                window.open_devtools();
+            }
             Ok(())
         })
         .invoke_handler(tauri::generate_handler![
@@ -24,6 +30,14 @@ pub fn run() {
             db::db_get_expenses,
             db::db_upsert_expense,
             db::db_delete_expense,
+            db::bybit_fetch_investments,
+            db::secure_store_exchange_key,
+            db::secure_delete_exchange_key,
+            db::secure_exchange_status,
+            db::db_get_investments,
+            db::db_upsert_investment,
+            db::db_delete_investment,
+            db::db_replace_investments,
             db::db_get_settings,
             db::db_set_settings,
             db::save_text_file,

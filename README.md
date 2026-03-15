@@ -1,6 +1,6 @@
 # Freelance Timeboard
 
-Günlük çalışma, gelir/gider, investment takibi uygulaması.
+Günlük çalışma, gelir/gider ve yatırım takibi için Tauri + Vite tabanlı masaüstü uygulaması.
 
 ![Dashboard (mock data)](src/data/dashboard.png)
 
@@ -10,18 +10,24 @@ Günlük çalışma, gelir/gider, investment takibi uygulaması.
 - `Panel` sekmesi: haftalık/aylık saat grafikleri, günlük saat + rolling ortalama, heatmap
 - `Analiz` sekmesi: KPI kartları, hedef takibi ve cycle histogram
 - `Clock/Lead` sekmesi: clock-in ve lead time girişi, risk bandı hesaplama
-- `Gelir` sekmesi: günlük saat/gelir kaydı ekleme, düzenleme, silme
-- `Gider` sekmesi: USD/TRY para birimi ile gider girişi, düzenleme, silme
-- `Bütçe` sekmesi: toplam gelir, toplam gider, net bakiye ve kategori bazlı gider özeti
+- `Veri` sekmesi: Gelir/Gider alt sekmeleri, hızlı giriş, CSV içe/dışa aktarma
+- `Yatırım` sekmesi: varlık listesi, filtreleme + tablo başlığından sıralama, performans metrikleri
+- `Bütçe` sekmesi: toplam gelir/gider, net bakiye ve kategori bazlı gider dağılımı
+- `Ayarlar` sekmesi:
+  - Genel ayarlar (USD/saat, USD/TRY, hedefler, dil)
+  - Borsa API anahtarları (keyring + şifreli vault fallback)
+  - Sekme görünürlüğü (veriyi silmeden gizle/göster)
 - Koyu/Açık tema ve TR/EN dil desteği
 - USD/TRY manuel giriş + canlı kur yenileme
-- CSV içe aktarma
-- CSV dışa aktarma
 
-## Veri Katmanı
-- Tauri (desktop):
-  - Gelir kayıtları, gider kayıtları ve ayarlar: SQLite
-- Web fallback: localStorage
+## Veri ve Güvenlik
+- Desktop (Tauri): Gelir, gider ve ayarlar SQLite üzerinde tutulur.
+- Web fallback: localStorage.
+- API anahtarları:
+  - Öncelik OS keyring.
+  - Keyring yoksa şifreli vault (app data dir) kullanılır.
+  - Vault parolası uygulama her açıldığında tekrar girilir, **saklanmaz**.
+  - Repo’ya API anahtarı yazılmaz, ayarlarda sadece maskeli görünür.
 
 ## Kurulum
 1. `npm install`
@@ -45,19 +51,23 @@ Günlük çalışma, gelir/gider, investment takibi uygulaması.
 4. APK build:
    - `npm run tauri:android:build`
 
+## Android Cleanup (Memory)
+- Gradle/Kotlin daemonlarını kapatmak için:
+  - `npm run android:cleanup`
+
 ### Android Notları
 - Telefon ve bilgisayar aynı ağda olmalı (dev server için).
 - Gerekirse Vite host: `server.host = true`.
-- Emülatör açılmazsa fiziksel cihaz ile deneme daha stabil olur.
+- Emülatör açılmazsa fiziksel cihaz daha stabil olabilir.
 
 ## CSV İçe Aktarma
-1. `Gelir` sekmesine geç.
+1. `Veri` → `Gelir` (veya `Gider`) sekmesine geç.
 2. `CSV İçe Aktar` butonuna tıkla.
 3. CSV dosyasını seç.
 4. Mevcut kayıtları değiştirme onayını ver.
 
 ## CSV Dışa Aktarma
-- `Gelir` sekmesindeki `CSV Dışa Aktar` ile dosya kaydedilir.
+- `Veri` sekmesindeki `CSV Dışa Aktar` ile dosya kaydedilir.
 - Tauri ortamında dosya önce `Downloads`, bulunamazsa `Desktop`, o da yoksa uygulama veri dizinine yazılır.
 
 ## Notlar
@@ -65,7 +75,7 @@ Günlük çalışma, gelir/gider, investment takibi uygulaması.
 - Güncelleme yaparken `identifier` ve `productName` sabit tutulursa kullanıcı verileri korunur.
 
 ## Lisans
-- Bu proje `Freelance Timeboard Non-Commercial License v1.0` ile lisanslanmıştır.
+- Bu proje `Freelance Timeboard Non-Commercial License v1.1` ile lisanslanmıştır.
 - Ticari kullanım yasaktır.
 - Ticari kullanım için ayrı yazılı izin/lisans alınmalıdır.
 - Detaylar için [LICENSE](/LICENSE) dosyasına bakın.
