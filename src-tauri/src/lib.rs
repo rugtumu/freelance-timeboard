@@ -2,7 +2,6 @@
 
 mod db;
 
-use tauri::Manager;
 
 #[tauri::command]
 fn open_external_url(url: String) -> Result<(), String> {
@@ -46,3 +45,4 @@ pub fn run() {
         .run(tauri::generate_context!())
         .expect("error while running tauri application");
 }
+use tauri::Manager;

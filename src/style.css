@@ -811,6 +811,7 @@ select:focus {
 
 .table-wrap {
   overflow: auto;
+  -webkit-overflow-scrolling: touch;
 }
 
 table {
@@ -1211,6 +1212,40 @@ th.sortable:hover {
   }
 }
 
+@media (max-width: 900px) {
+  .investment-holdings .table-wrap {
+    overflow-x: auto;
+  }
+
+  .investment-holdings table {
+    min-width: 720px;
+  }
+}
+
+@media (max-width: 720px) {
+  .holdings-controls {
+    flex-direction: column;
+    align-items: stretch;
+  }
+
+  .holdings-toolbar {
+    width: 100%;
+  }
+
+  .holdings-toolbar label {
+    min-width: 0;
+    width: 100%;
+  }
+
+  .holdings-toolbar input {
+    width: 100%;
+  }
+
+  .investment-holdings table {
+    min-width: 640px;
+  }
+}
+
 .pill {
   display: inline-flex;
   align-items: center;
@@ -1313,6 +1348,16 @@ td.neg { color: #ff5f57; }
 
   .investment-main-grid {
     grid-template-columns: 1fr;
+  }
+}
+
+@media (max-width: 980px) {
+  .investment-layout > section {
+    min-width: 0;
+  }
+
+  .investment-layout > section.card {
+    width: 100%;
   }
 }
 
