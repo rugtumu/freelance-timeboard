@@ -209,7 +209,9 @@ const I18N = {
     monthlyTarget: "Aylık Hedef",
     weeklyHoursLast8: "Haftalık Saat (Bu Hafta)",
     monthlyHoursLast6: "Aylık Saat (Son 6 Ay)",
+    monthlyHoursAll: "Aylık Saat (Tüm Aylar)",
     dailyRolling: "Günlük Saat ve 10g Ortalama",
+    dailyHoursAll: "Günlük Saat",
     heatmap20: "Gün Bazlı Heatmap (Son 20 Hafta)",
     weekdayProductivity: "Hafta Günü Verim Bar Grafiği",
     avgHours: "Ort. Saat",
@@ -453,7 +455,9 @@ const I18N = {
     monthlyTarget: "Monthly Target",
     weeklyHoursLast8: "Weekly Hours (This Week)",
     monthlyHoursLast6: "Monthly Hours (Last 6 Months)",
+    monthlyHoursAll: "Monthly Hours (All Months)",
     dailyRolling: "Daily Hours and 10d Avg",
+    dailyHoursAll: "Daily Hours",
     heatmap20: "Day-based Heatmap (Last 20 Weeks)",
     weekdayProductivity: "Weekday Productivity Bars",
     avgHours: "Avg Hours",
@@ -1000,12 +1004,12 @@ function renderApp() {
           ${barChartSvg(dashboard.weeklySeries)}
         </article>
         <article class="card">
-          <h3>${t("monthlyHoursLast6")}</h3>
+          <h3>${t("monthlyHoursAll")}</h3>
           ${barChartSvg(dashboard.monthlySeries)}
         </article>
         <article class="card full-viz">
           <h3>${t("dailyRolling")}</h3>
-          ${rollingChartSvg(dashboard.rollingSeries)}
+          ${dailyHoursHistogramSvg(dashboard.rollingSeries)}
         </article>
         <article class="card">
           <h3>${t("heatmap20")}</h3>
@@ -2636,13 +2640,11 @@ function deriveDashboard(rowsDesc, settings, expenses = []) {
   const weeklySeries = buildCurrentWeekSeries(rowsDesc);
 
   const monthlySeries = Array.from(monthMap.entries())
-    .slice(-6)
     .map(([k, v]) => ({ label: formatMonthLabel(k), hours: round(v.hours, 2), income: round(v.income, 2) }));
 
-  const rollingSeries = rowsDesc
-    .slice(0, 60)
+  const rollingSeries = [...rowsDesc]
     .reverse()
-    .map((r) => ({ date: r.date, hours: r.hours, avg: r.rolling10dAvg }));
+    .map((r) => ({ date: r.date, hours: r.hours, avg: r.rolling10dAvg, income: r.dailyUsd }));
 
   const weekGoalPct = toPercent(weekHours, settings.weeklyTargetHours);
   const monthGoalPct = toPercent(monthHours, settings.monthlyTargetHours);
@@ -3850,7 +3852,16 @@ function rollingChartSvg(points) {
     return `${x.toFixed(1)},${y.toFixed(1)}`;
   };
 
-  const daily = points.map((p, i) => toPoint(p.hours, i)).join(" ");
+  const stepX = innerW / points.length;
+  const barWidth = Math.max(6, Math.min(18, stepX * 0.58));
+  const dailyBars = points
+    .map((p, i) => {
+      const x = pad.left + stepX * i + (stepX - barWidth) / 2;
+      const y = pad.top + innerH - ((p.hours - min) / range) * innerH;
+      const barHeight = Math.max(2, pad.top + innerH - y);
+      return `<rect class="daily-bar" x="${x.toFixed(1)}" y="${y.toFixed(1)}" width="${barWidth.toFixed(1)}" height="${barHeight.toFixed(1)}" rx="2" ry="2" />`;
+    })
+    .join("");
   const rolling = points.map((p, i) => toPoint(p.avg, i)).join(" ");
   const startLabel = points[0]?.date || "";
   const endLabel = points[points.length - 1]?.date || "";
@@ -3869,16 +3880,101 @@ function rollingChartSvg(points) {
   return `<svg class="chart line-chart" viewBox="0 0 ${width} ${height}" role="img">
     ${grid}
     <line class="axis-line" x1="${pad.left}" y1="${pad.top + innerH}" x2="${width - pad.right}" y2="${pad.top + innerH}" />
-    <polyline class="daily" points="${daily}" />
+    ${dailyBars}
     <polyline class="rolling" points="${rolling}" />
     <text class="axis-x" x="${pad.left}" y="${height - 10}" text-anchor="start">${escapeHtml(startLabel)}</text>
     <text class="axis-x" x="${width - pad.right}" y="${height - 10}" text-anchor="end">${escapeHtml(endLabel)}</text>
     <g class="chart-legend">
-      <line x1="${pad.left + 6}" y1="${pad.top + 8}" x2="${pad.left + 30}" y2="${pad.top + 8}" class="daily" />
+      <rect x="${pad.left + 6}" y="${pad.top + 2}" width="24" height="12" rx="4" ry="4" class="daily-bar" />
       <text x="${pad.left + 36}" y="${pad.top + 11}">${t("dailyHoursLabel")}</text>
       <line x1="${pad.left + 190}" y1="${pad.top + 8}" x2="${pad.left + 214}" y2="${pad.top + 8}" class="rolling" />
       <text x="${pad.left + 220}" y="${pad.top + 11}">${t("rollingAvgLabel")}</text>
     </g>
+  </svg>`;
+}
+
+function dailyHoursHistogramSvg(points) {
+  if (!points.length) return `<div class="empty muted">${t("noData")}</div>`;
+
+  const series = [...points]
+    .map((row) => ({
+      date: row.date,
+      month: row.date.slice(0, 7),
+      value: Number(row.hours) || 0,
+      income: Number(row.income ?? row.dailyUsd) || 0,
+      avg: Number(row.avg) || 0
+    }));
+
+  const width = 1180;
+  const height = 280;
+  const pad = { top: 14, right: 58, bottom: 44, left: 56 };
+  const innerW = width - pad.left - pad.right;
+  const innerH = height - pad.top - pad.bottom;
+  const maxHours = Math.max(...series.map((s) => s.value), 1);
+  const maxIncomeRaw = Math.max(...series.map((s) => s.income), 0);
+  const maxIncome = Math.max(maxIncomeRaw, 1);
+  const maxAvg = Math.max(...series.map((s) => s.avg), 0);
+  const maxAxisHours = Math.max(maxHours, maxAvg, 1);
+  const stepHours = maxAxisHours / 4;
+  const stepX = innerW / series.length;
+  const barW = Math.max(2, Math.min(14, stepX - 1));
+
+  const grid = [...Array(5)]
+    .map((_, i) => {
+      const hoursValue = stepHours * i;
+      const incomeValue = maxIncomeRaw * (i / 4);
+      const y = pad.top + innerH - (i / 4) * innerH;
+      return `<g>
+        <line class="axis-grid" x1="${pad.left}" y1="${y}" x2="${width - pad.right}" y2="${y}" />
+        <text class="axis-y" x="${pad.left - 8}" y="${y + 3}" text-anchor="end">${fmtNumber(hoursValue, 1)}h</text>
+        <text class="axis-y axis-y-right" x="${width - pad.right + 8}" y="${y + 3}" text-anchor="start">${fmtMoney(incomeValue)}</text>
+      </g>`;
+    })
+    .join("");
+
+  const avgLine = series
+    .map((s, i) => {
+      const x = pad.left + i * stepX + stepX / 2;
+      const y = pad.top + innerH - ((s.avg - 0) / maxAxisHours) * innerH;
+      return `${x.toFixed(1)},${y.toFixed(1)}`;
+    })
+    .join(" ");
+
+  let lastMonth = "";
+  const bars = series
+    .map((s, i) => {
+      const h = Math.max(1, Math.round((s.value / maxAxisHours) * innerH));
+      const x = pad.left + i * stepX + (stepX - barW) / 2;
+      const y = pad.top + innerH - h;
+      const day = s.date.slice(8, 10);
+      const monthChanged = s.month !== lastMonth;
+      if (monthChanged) lastMonth = s.month;
+
+      const monthMarker = monthChanged
+        ? `<line class="month-split" x1="${x - 2}" y1="${pad.top}" x2="${x - 2}" y2="${pad.top + innerH}" />
+           <text class="axis-x month-label" x="${x + 1}" y="${height - 24}" text-anchor="start">${formatMonthLabel(s.month)}</text>`
+        : "";
+
+      const dayLabel = day === "01" || i % 5 === 0
+        ? `<text class="axis-x" x="${x + barW / 2}" y="${height - 8}" text-anchor="middle">${Number(day)}</text>`
+        : "";
+      const tip = `${s.date} | ${fmtHours(s.value)} | ${fmtMoney(s.income)}`;
+
+      return `<g>
+        ${monthMarker}
+        <rect class="daily-hours-bar" x="${x}" y="${y}" width="${barW}" height="${h}" rx="2">
+          <title>${escapeHtml(tip)}</title>
+        </rect>
+        ${dayLabel}
+      </g>`;
+    })
+    .join("");
+
+  return `<svg class="chart cycle-hist-chart daily-hours-chart" viewBox="0 0 ${width} ${height}" role="img">
+    ${grid}
+    <line class="axis-line" x1="${pad.left}" y1="${pad.top + innerH}" x2="${width - pad.right}" y2="${pad.top + innerH}" />
+    ${bars}
+    <polyline class="rolling" points="${avgLine}" />
   </svg>`;
 }
 

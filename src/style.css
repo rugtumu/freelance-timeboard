@@ -186,11 +186,13 @@ body {
   grid-template-columns: 1fr;
   justify-items: center;
   width: 100%;
+  min-width: 0;
 }
 
 .settings-panel .card {
   margin: 0 auto;
   width: min(760px, 100%);
+  max-width: 100%;
 }
 
 .settings-panel {
@@ -205,6 +207,7 @@ body {
   width: min(760px, 100%);
   margin: 0 auto;
   max-width: 100%;
+  min-width: 0;
 }
 
 .settings-grid {
@@ -435,6 +438,11 @@ body {
   stroke: #3aa7ff;
 }
 
+.line-chart .daily-bar {
+  fill: #3aa7ff;
+  opacity: 0.92;
+}
+
 .line-chart .rolling {
   stroke: #ff9500;
 }
@@ -534,6 +542,30 @@ body {
   border-radius: 16px;
   padding: 1rem;
   box-shadow: var(--shadow);
+}
+
+.daily-hours-table-wrap {
+  max-height: 340px;
+  overflow: auto;
+}
+
+.daily-hours-table td:nth-child(2),
+.daily-hours-table td:nth-child(3),
+.daily-hours-table th:nth-child(2),
+.daily-hours-table th:nth-child(3) {
+  text-align: right;
+}
+
+.daily-hours-chart .daily-hours-bar {
+  fill: var(--primary);
+}
+
+.daily-hours-chart .rolling {
+  fill: none;
+  stroke: #4da3ff;
+  stroke-width: 3;
+  stroke-linecap: round;
+  stroke-linejoin: round;
 }
 
 .tl-income-card {
@@ -921,6 +953,23 @@ thead th {
 
   .card {
     padding: 0.85rem;
+  }
+
+  .settings-panel .panel-inner,
+  .settings-panel .layout,
+  .settings-panel .settings-grid,
+  .settings-panel .card {
+    width: 100%;
+    max-width: 100%;
+    min-width: 0;
+  }
+
+  .settings-card .form-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .exchange-key-row {
+    grid-template-columns: 1fr;
   }
 
   .records-actions {
