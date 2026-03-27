@@ -1,3 +1,7 @@
+use argon2::{
+    password_hash::{rand_core::OsRng, PasswordHash, PasswordHasher, PasswordVerifier, SaltString},
+    Argon2,
+};
 use axum::{
     extract::{Query, State},
     http::{HeaderMap, StatusCode},
@@ -7,22 +11,15 @@ use axum::{
 };
 use rusqlite::{params, Connection};
 use serde::{Deserialize, Serialize};
-use std::{
-    collections::HashSet,
-    net::SocketAddr,
-    path::PathBuf,
-    sync::{Arc, Mutex},
-};
-use time::OffsetDateTime;
+use std::{net::SocketAddr, path::PathBuf, sync::Arc};
+use time::{Duration, OffsetDateTime};
 use tower_http::cors::{Any, CorsLayer};
 use uuid::Uuid;
 
 #[derive(Clone)]
 struct AppState {
-    db_path: PathBuf,
-    tokens: Arc<Mutex<HashSet<String>>>,
-    username: String,
-    password: String,
+    db_path: Arc<PathBuf>,
+    session_ttl_days: i64,
 }
 
 #[derive(Serialize)]
@@ -37,20 +34,14 @@ struct LoginRequest {
     password: String,
 }
 
-#[derive(Serialize)]
-struct LoginResponse {
-    token: String,
+#[derive(Deserialize)]
+struct LogoutRequest {
+    token: Option<String>,
 }
 
 #[derive(Deserialize)]
 struct ChangesQuery {
     since: Option<String>,
-}
-
-#[derive(Serialize)]
-struct ChangesResponse {
-    server_time: String,
-    changes: ChangesPayload,
 }
 
 #[derive(Serialize, Deserialize, Default)]
@@ -67,12 +58,6 @@ struct PushRequest {
     changes: ChangesPayload,
 }
 
-#[derive(Serialize)]
-struct PushResponse {
-    ok: bool,
-    server_time: String,
-}
-
 #[tokio::main]
 async fn main() {
     let db_path = std::env::var("FTB_DB_PATH")
@@ -84,22 +69,25 @@ async fn main() {
         .ok()
         .and_then(|v| v.parse().ok())
         .unwrap_or(8080);
+    let session_ttl_days: i64 = std::env::var("FTB_SESSION_DAYS")
+        .ok()
+        .and_then(|v| v.parse().ok())
+        .unwrap_or(180);
 
-    if let Err(e) = init_db(&db_path) {
+    if let Err(e) = init_db(&db_path, &username, &password) {
         eprintln!("DB init failed: {e}");
         std::process::exit(1);
     }
 
     let state = AppState {
-        db_path,
-        tokens: Arc::new(Mutex::new(HashSet::new())),
-        username,
-        password,
+        db_path: Arc::new(db_path),
+        session_ttl_days,
     };
 
     let app = Router::new()
         .route("/health", get(health))
         .route("/auth/login", post(login))
+        .route("/auth/logout", post(logout))
         .route("/sync/changes", get(changes))
         .route("/sync/push", post(push))
         .layer(
@@ -117,7 +105,7 @@ async fn main() {
         .unwrap();
 }
 
-fn init_db(path: &PathBuf) -> Result<(), String> {
+fn init_db(path: &PathBuf, default_user: &str, default_pass: &str) -> Result<(), String> {
     if let Some(parent) = path.parent() {
         std::fs::create_dir_all(parent).map_err(|e| format!("mkdir failed: {e}"))?;
     }
@@ -152,10 +140,71 @@ fn init_db(path: &PathBuf) -> Result<(), String> {
           deleted_at TEXT,
           client_id TEXT NOT NULL
         );
+        CREATE TABLE IF NOT EXISTS users (
+          id TEXT PRIMARY KEY,
+          username TEXT NOT NULL UNIQUE,
+          password_hash TEXT NOT NULL,
+          created_at TEXT NOT NULL,
+          updated_at TEXT NOT NULL
+        );
+        CREATE TABLE IF NOT EXISTS sessions (
+          token TEXT PRIMARY KEY,
+          user_id TEXT NOT NULL,
+          created_at TEXT NOT NULL,
+          expires_at TEXT NOT NULL,
+          revoked_at TEXT,
+          FOREIGN KEY(user_id) REFERENCES users(id)
+        );
+        CREATE INDEX IF NOT EXISTS idx_sessions_user_id ON sessions(user_id);
+        CREATE INDEX IF NOT EXISTS idx_sessions_expires_at ON sessions(expires_at);
         ",
     )
     .map_err(|e| format!("schema init failed: {e}"))?;
+
+    bootstrap_default_user(&conn, default_user, default_pass)?;
     Ok(())
+}
+
+fn bootstrap_default_user(conn: &Connection, username: &str, password: &str) -> Result<(), String> {
+    let count: i64 = conn
+        .query_row("SELECT COUNT(*) FROM users", [], |row| row.get(0))
+        .map_err(|e| format!("users count failed: {e}"))?;
+    if count > 0 {
+        return Ok(());
+    }
+
+    let now = now_iso();
+    let hash = hash_password(password)?;
+    conn.execute(
+        "INSERT INTO users (id, username, password_hash, created_at, updated_at) VALUES (?1, ?2, ?3, ?4, ?5)",
+        params![Uuid::new_v4().to_string(), username, hash, now, now],
+    )
+    .map_err(|e| format!("default user insert failed: {e}"))?;
+
+    println!("[auth] default user bootstrapped: {username}");
+    Ok(())
+}
+
+fn hash_password(password: &str) -> Result<String, String> {
+    let salt = SaltString::generate(&mut OsRng);
+    Argon2::default()
+        .hash_password(password.as_bytes(), &salt)
+        .map(|p| p.to_string())
+        .map_err(|e| format!("hash failed: {e}"))
+}
+
+fn verify_password(password: &str, password_hash: &str) -> bool {
+    let parsed = match PasswordHash::new(password_hash) {
+        Ok(v) => v,
+        Err(_) => return false,
+    };
+    Argon2::default()
+        .verify_password(password.as_bytes(), &parsed)
+        .is_ok()
+}
+
+fn parse_iso_datetime(s: &str) -> Option<OffsetDateTime> {
+    OffsetDateTime::parse(s, &time::format_description::well_known::Rfc3339).ok()
 }
 
 async fn health() -> impl IntoResponse {
@@ -167,15 +216,110 @@ async fn health() -> impl IntoResponse {
 }
 
 async fn login(State(state): State<AppState>, Json(payload): Json<LoginRequest>) -> impl IntoResponse {
-    if payload.username != state.username || payload.password != state.password {
-        return (StatusCode::UNAUTHORIZED, Json(serde_json::json!({"error": "invalid_credentials"})));
+    let conn = match Connection::open(state.db_path.as_ref()) {
+        Ok(c) => c,
+        Err(e) => {
+            return (
+                StatusCode::INTERNAL_SERVER_ERROR,
+                Json(serde_json::json!({"error": e.to_string()})),
+            )
+        }
+    };
+
+    let user_row: Result<(String, String), _> = conn.query_row(
+        "SELECT id, password_hash FROM users WHERE username = ?1",
+        params![payload.username],
+        |row| Ok((row.get(0)?, row.get(1)?)),
+    );
+
+    let (user_id, password_hash) = match user_row {
+        Ok(v) => v,
+        Err(_) => {
+            return (
+                StatusCode::UNAUTHORIZED,
+                Json(serde_json::json!({"error": "invalid_credentials"})),
+            )
+        }
+    };
+
+    if !verify_password(&payload.password, &password_hash) {
+        return (
+            StatusCode::UNAUTHORIZED,
+            Json(serde_json::json!({"error": "invalid_credentials"})),
+        );
     }
 
     let token = Uuid::new_v4().to_string();
-    if let Ok(mut tokens) = state.tokens.lock() {
-        tokens.insert(token.clone());
+    let created_at_dt = OffsetDateTime::now_utc();
+    let expires_at_dt = created_at_dt + Duration::days(state.session_ttl_days);
+    let created_at = format_rfc3339(created_at_dt);
+    let expires_at = format_rfc3339(expires_at_dt);
+
+    if let Err(e) = conn.execute(
+        "INSERT INTO sessions (token, user_id, created_at, expires_at, revoked_at) VALUES (?1, ?2, ?3, ?4, NULL)",
+        params![token, user_id, created_at, expires_at],
+    ) {
+        return (
+            StatusCode::INTERNAL_SERVER_ERROR,
+            Json(serde_json::json!({"error": format!("session_create_failed: {e}")})),
+        );
     }
-    (StatusCode::OK, Json(LoginResponse { token }))
+
+    (
+        StatusCode::OK,
+        Json(serde_json::json!({
+            "token": token,
+            "expires_at": expires_at
+        })),
+    )
+}
+
+async fn logout(
+    State(state): State<AppState>,
+    headers: HeaderMap,
+    Json(payload): Json<LogoutRequest>,
+) -> impl IntoResponse {
+    let token = payload
+        .token
+        .as_deref()
+        .map(str::trim)
+        .filter(|s| !s.is_empty())
+        .map(|s| s.to_string())
+        .or_else(|| extract_bearer_token(&headers));
+
+    let Some(token) = token else {
+        return (
+            StatusCode::BAD_REQUEST,
+            Json(serde_json::json!({"error": "missing_token"})),
+        );
+    };
+
+    let conn = match Connection::open(state.db_path.as_ref()) {
+        Ok(c) => c,
+        Err(e) => {
+            return (
+                StatusCode::INTERNAL_SERVER_ERROR,
+                Json(serde_json::json!({"error": e.to_string()})),
+            )
+        }
+    };
+
+    let revoked_at = now_iso();
+    let rows = conn
+        .execute(
+            "UPDATE sessions SET revoked_at = ?2 WHERE token = ?1 AND revoked_at IS NULL",
+            params![token, revoked_at],
+        )
+        .unwrap_or(0);
+
+    if rows == 0 {
+        return (
+            StatusCode::NOT_FOUND,
+            Json(serde_json::json!({"error": "session_not_found"})),
+        );
+    }
+
+    (StatusCode::OK, Json(serde_json::json!({"ok": true})))
 }
 
 async fn changes(
@@ -184,14 +328,20 @@ async fn changes(
     Query(query): Query<ChangesQuery>,
 ) -> impl IntoResponse {
     if !is_authorized(&state, &headers) {
-        return (StatusCode::UNAUTHORIZED, Json(serde_json::json!({"error": "unauthorized"})));
+        return (
+            StatusCode::UNAUTHORIZED,
+            Json(serde_json::json!({"error": "unauthorized"})),
+        );
     }
 
     let since = query.since.unwrap_or_default();
-    let conn = match Connection::open(&state.db_path) {
+    let conn = match Connection::open(state.db_path.as_ref()) {
         Ok(c) => c,
         Err(e) => {
-            return (StatusCode::INTERNAL_SERVER_ERROR, Json(serde_json::json!({"error": e.to_string()})));
+            return (
+                StatusCode::INTERNAL_SERVER_ERROR,
+                Json(serde_json::json!({"error": e.to_string()})),
+            )
         }
     };
 
@@ -200,59 +350,103 @@ async fn changes(
     let clock_lead = fetch_changes(&conn, "clock_lead", &since).unwrap_or_default();
     let settings = fetch_settings(&conn, &since).unwrap_or_else(|_| serde_json::json!({}));
 
-    let resp = ChangesResponse {
-        server_time: now_iso(),
-        changes: ChangesPayload {
-            work_logs,
-            expenses,
-            settings,
-            clock_lead,
-        },
-    };
-    (StatusCode::OK, Json(resp))
+    (
+        StatusCode::OK,
+        Json(serde_json::json!({
+            "server_time": now_iso(),
+            "changes": {
+                "work_logs": work_logs,
+                "expenses": expenses,
+                "settings": settings,
+                "clock_lead": clock_lead
+            }
+        })),
+    )
 }
 
 async fn push(
     State(state): State<AppState>,
     headers: HeaderMap,
-    Json(_payload): Json<PushRequest>,
+    Json(payload): Json<PushRequest>,
 ) -> impl IntoResponse {
     if !is_authorized(&state, &headers) {
-        return (StatusCode::UNAUTHORIZED, Json(serde_json::json!({"error": "unauthorized"})));
+        return (
+            StatusCode::UNAUTHORIZED,
+            Json(serde_json::json!({"error": "unauthorized"})),
+        );
     }
 
-    let mut conn = match Connection::open(&state.db_path) {
+    let mut conn = match Connection::open(state.db_path.as_ref()) {
         Ok(c) => c,
         Err(e) => {
-            return (StatusCode::INTERNAL_SERVER_ERROR, Json(serde_json::json!({"error": e.to_string()})));
+            return (
+                StatusCode::INTERNAL_SERVER_ERROR,
+                Json(serde_json::json!({"error": e.to_string()})),
+            )
         }
     };
 
-    if let Err(e) = apply_changes(&mut conn, _payload.changes) {
-        return (StatusCode::BAD_REQUEST, Json(serde_json::json!({"error": e})));
+    if let Err(e) = apply_changes(&mut conn, payload.changes) {
+        return (
+            StatusCode::BAD_REQUEST,
+            Json(serde_json::json!({"error": e})),
+        );
     }
 
-    let resp = PushResponse {
-        ok: true,
-        server_time: now_iso(),
-    };
-    (StatusCode::OK, Json(resp))
+    (
+        StatusCode::OK,
+        Json(serde_json::json!({
+            "ok": true,
+            "server_time": now_iso()
+        })),
+    )
+}
+
+fn extract_bearer_token(headers: &HeaderMap) -> Option<String> {
+    let auth = headers.get("authorization")?.to_str().ok()?;
+    let token = auth.strip_prefix("Bearer ")?.trim();
+    if token.is_empty() {
+        return None;
+    }
+    Some(token.to_string())
 }
 
 fn is_authorized(state: &AppState, headers: &HeaderMap) -> bool {
-    let Some(auth) = headers.get("authorization") else { return false };
-    let Ok(auth) = auth.to_str() else { return false };
-    let token = auth.strip_prefix("Bearer ").unwrap_or("");
-    if token.is_empty() {
+    let Some(token) = extract_bearer_token(headers) else {
+        return false;
+    };
+
+    let conn = match Connection::open(state.db_path.as_ref()) {
+        Ok(c) => c,
+        Err(_) => return false,
+    };
+
+    let row: Result<(String, Option<String>), _> = conn.query_row(
+        "SELECT expires_at, revoked_at FROM sessions WHERE token = ?1",
+        params![token],
+        |r| Ok((r.get(0)?, r.get(1)?)),
+    );
+
+    let Ok((expires_at_raw, revoked_at)) = row else {
+        return false;
+    };
+    if revoked_at.is_some() {
         return false;
     }
-    state.tokens.lock().map(|t| t.contains(token)).unwrap_or(false)
+
+    let Some(expires_at) = parse_iso_datetime(&expires_at_raw) else {
+        return false;
+    };
+    expires_at > OffsetDateTime::now_utc()
+}
+
+fn format_rfc3339(dt: OffsetDateTime) -> String {
+    dt.format(&time::format_description::well_known::Rfc3339)
+        .unwrap_or_else(|_| dt.unix_timestamp().to_string())
 }
 
 fn now_iso() -> String {
-    let now = OffsetDateTime::now_utc();
-    now.format(&time::format_description::well_known::Rfc3339)
-        .unwrap_or_else(|_| now.unix_timestamp().to_string())
+    format_rfc3339(OffsetDateTime::now_utc())
 }
 
 fn apply_changes(conn: &mut Connection, changes: ChangesPayload) -> Result<(), String> {
@@ -288,6 +482,7 @@ fn upsert_table(conn: &mut Connection, table: &str, items: Vec<serde_json::Value
         stmt.execute(params![id, payload, updated_at, deleted_at, client_id])
             .map_err(|e| e.to_string())?;
     }
+    drop(stmt);
     tx.commit().map_err(|e| e.to_string())?;
     Ok(())
 }
@@ -345,7 +540,7 @@ fn fetch_settings(conn: &Connection, since: &str) -> Result<serde_json::Value, S
     if let Some(row) = rows.next().map_err(|e| e.to_string())? {
         let payload: String = row.get(0).map_err(|e| e.to_string())?;
         let updated_at: String = row.get(1).map_err(|e| e.to_string())?;
-        if updated_at > since {
+        if updated_at.as_str() > since {
             let val: serde_json::Value = serde_json::from_str(&payload).map_err(|e| e.to_string())?;
             return Ok(val);
         }

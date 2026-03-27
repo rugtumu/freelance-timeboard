@@ -27,6 +27,12 @@ const DEFAULT_SETTINGS = {
   monthlyTargetHours: 140,
   theme: "dark",
   language: "tr",
+  syncServerUrl: "",
+  syncUsername: "",
+  syncClientId: "",
+  syncToken: "",
+  syncTokenExpiresAt: "",
+  syncLastSyncAt: "",
   exchangeKeys: [],
   visibleTabs: { ...DEFAULT_VISIBLE_TABS }
 };
@@ -53,6 +59,12 @@ const state = {
     sortKey: "value",
     sortDir: "desc",
     query: ""
+  },
+  auth: {
+    authenticated: false,
+    password: "",
+    busy: false,
+    message: ""
   }
 };
 
@@ -130,6 +142,26 @@ const I18N = {
     exchangeKeySaveFailed: "API anahtarı kaydedilemedi.",
     exchangeKeySaveFailedWithReason: "API anahtarı kaydedilemedi: {reason}",
     vaultPasswordRequired: "Keyring çalışmadığı için Vault parolası gerekli.",
+    syncServer: "Sync Sunucusu",
+    syncServerUrl: "Sunucu URL",
+    syncUsername: "Kullanıcı Adı",
+    syncPassword: "Şifre",
+    signIn: "Giriş Yap",
+    signOut: "Çıkış Yap",
+    syncNow: "Şimdi Senkronize Et",
+    syncPull: "Sunucudan Çek",
+    syncPush: "Sunucuya Gönder",
+    authRequired: "Devam etmek için giriş yapman gerekiyor.",
+    authLoginTitle: "Pi Sync Girişi",
+    authLoginSubtitle: "Verilerine erişmek için sunucuya giriş yap.",
+    syncConnected: "Bağlı",
+    syncDisconnected: "Bağlı değil",
+    syncLoginFailed: "Giriş başarısız.",
+    syncMissingConfig: "Sunucu URL ve kullanıcı adı gerekli.",
+    syncUnauthorized: "Oturum süresi doldu. Lütfen tekrar giriş yap.",
+    syncDone: "Senkronizasyon tamamlandı.",
+    syncFailed: "Senkronizasyon başarısız oldu.",
+    syncAutoPullFailed: "Giriş başarılı, ilk veri çekme başarısız oldu.",
     settingsGeneral: "Genel Ayarlar",
     tabVisibility: "Sekme Görünürlüğü",
     keySaved: "Kaydedildi",
@@ -351,6 +383,26 @@ const I18N = {
     exchangeKeySaveFailed: "API key could not be saved.",
     exchangeKeySaveFailedWithReason: "API key could not be saved: {reason}",
     vaultPasswordRequired: "Vault password is required because keyring is unavailable.",
+    syncServer: "Sync Server",
+    syncServerUrl: "Server URL",
+    syncUsername: "Username",
+    syncPassword: "Password",
+    signIn: "Sign In",
+    signOut: "Sign Out",
+    syncNow: "Sync Now",
+    syncPull: "Pull",
+    syncPush: "Push",
+    authRequired: "Sign in to continue.",
+    authLoginTitle: "Pi Sync Login",
+    authLoginSubtitle: "Sign in to access your data.",
+    syncConnected: "Connected",
+    syncDisconnected: "Disconnected",
+    syncLoginFailed: "Login failed.",
+    syncMissingConfig: "Server URL and username are required.",
+    syncUnauthorized: "Session expired. Please sign in again.",
+    syncDone: "Sync completed.",
+    syncFailed: "Sync failed.",
+    syncAutoPullFailed: "Signed in, but initial pull failed.",
     settingsGeneral: "General Settings",
     tabVisibility: "Tab Visibility",
     keySaved: "Saved",
@@ -519,6 +571,15 @@ async function bootstrap() {
   state.expenses = loaded.expenses;
   state.investments = loaded.investments;
   state.settings = { ...DEFAULT_SETTINGS, ...loaded.settings };
+  if (!state.settings.syncClientId) {
+    state.settings.syncClientId = uid();
+    await dataStore.saveSettings(state.settings);
+  }
+  state.auth.authenticated = hasValidSyncToken();
+  if (!state.auth.authenticated) {
+    state.settings.syncToken = "";
+    state.settings.syncTokenExpiresAt = "";
+  }
   await refreshExchangeKeyStatus();
   applyTheme();
   renderApp();
@@ -806,6 +867,12 @@ function mapRawSettings(raw) {
     monthlyTargetHours: toNum(src.monthlyTargetHours),
     theme: src.theme || DEFAULT_SETTINGS.theme,
     language: src.language || DEFAULT_SETTINGS.language,
+    syncServerUrl: String(src.syncServerUrl || "").trim(),
+    syncUsername: String(src.syncUsername || "").trim(),
+    syncClientId: String(src.syncClientId || "").trim(),
+    syncToken: String(src.syncToken || "").trim(),
+    syncTokenExpiresAt: String(src.syncTokenExpiresAt || "").trim(),
+    syncLastSyncAt: String(src.syncLastSyncAt || "").trim(),
     exchangeKeys: parseExchangeKeys(src.exchangeKeys),
     visibleTabs: normalizeVisibleTabs(src.visibleTabs)
   };
@@ -845,6 +912,13 @@ function parseExchangeKeys(raw) {
 }
 
 function renderApp() {
+  const app = document.getElementById("app");
+  if (!state.auth.authenticated) {
+    app.innerHTML = loginScreenHtml();
+    bindEvents([]);
+    return;
+  }
+
   const rowsDesc = deriveRows(state.logs, state.settings);
   const dashboard = deriveDashboard(rowsDesc, state.settings, state.expenses);
   const budget = deriveBudget(rowsDesc, state.expenses, state.settings, state.budgetView);
@@ -859,7 +933,6 @@ function renderApp() {
     state.activeTab = availableTabs[0];
   }
 
-  const app = document.getElementById("app");
   app.innerHTML = `
     <div class="shell">
       <header class="hero">
@@ -1271,6 +1344,37 @@ function renderApp() {
           </section>
 
           <section class="card settings-card">
+            <h2>${t("syncServer")}</h2>
+            <div class="form-grid">
+              <label>
+                ${t("syncServerUrl")}
+                <input id="setting-sync-url" type="text" placeholder="http://192.168.0.200:8080" value="${escapeHtml(state.settings.syncServerUrl || "")}" />
+              </label>
+              <label>
+                ${t("syncUsername")}
+                <input id="setting-sync-username" type="text" placeholder="umut" value="${escapeHtml(state.settings.syncUsername || "")}" />
+              </label>
+              <label>
+                ${t("syncPassword")}
+                <input id="setting-sync-password" type="password" placeholder="••••••" value="" />
+              </label>
+              <div class="full holdings-toolbar">
+                <button type="button" id="sync-login" class="btn ghost">${t("signIn")}</button>
+                <button type="button" id="sync-logout" class="btn ghost">${t("signOut")}</button>
+                <button type="button" id="sync-now" class="btn primary">${t("syncNow")}</button>
+                <button type="button" id="sync-pull" class="btn ghost">${t("syncPull")}</button>
+                <button type="button" id="sync-push" class="btn ghost">${t("syncPush")}</button>
+              </div>
+              <div class="full">
+                <small class="muted">${hasValidSyncToken() ? t("syncConnected") : t("syncDisconnected")} · ${state.settings.syncLastSyncAt ? state.settings.syncLastSyncAt : "-"}</small>
+              </div>
+            </div>
+            <div class="form-actions full settings-actions">
+              <button type="submit" class="btn primary">${t("save")}</button>
+            </div>
+          </section>
+
+          <section class="card settings-card">
             <h2>${t("tabVisibility")}</h2>
             <div class="tab-visibility-list">
               ${TAB_ORDER.map((tab) => `
@@ -1383,6 +1487,49 @@ function appFooterHtml() {
   return `Developed by <a id="creator-link" href="https://github.com/rugtumu" target="_blank" rel="noopener noreferrer">@rugtumu</a> · v${escapeHtml(APP_VERSION)}`;
 }
 
+function loginScreenHtml() {
+  return `
+    <div class="shell">
+      <header class="hero">
+        <div>
+          <p class="eyebrow">Work, Expense, and Investment Tracker</p>
+          <h1>${t("authLoginTitle")}</h1>
+          <p class="muted">${t("authLoginSubtitle")}</p>
+        </div>
+        <div class="hero-actions">
+          <button id="theme-toggle" class="btn ghost icon-btn" title="${state.settings.theme === "dark" ? t("toLightTheme") : t("toDarkTheme")}" aria-label="${t("themeToggleAria")}">
+            ${state.settings.theme === "dark" ? themeSunIcon() : themeMoonIcon()}
+          </button>
+          <button id="lang-toggle" class="btn ghost lang-btn" title="${t("langToggleAria")}" aria-label="${t("langToggleAria")}">
+            ${state.settings.language === "tr" ? "EN" : "TR"}
+          </button>
+        </div>
+      </header>
+      <section class="card" style="max-width:560px; margin:0 auto;">
+        <form id="login-form" class="form-grid">
+          <label class="full">
+            ${t("syncServerUrl")}
+            <input id="login-server-url" type="text" placeholder="http://192.168.0.200:8080" value="${escapeHtml(state.settings.syncServerUrl || "")}" required />
+          </label>
+          <label class="full">
+            ${t("syncUsername")}
+            <input id="login-username" type="text" value="${escapeHtml(state.settings.syncUsername || "")}" required />
+          </label>
+          <label class="full">
+            ${t("syncPassword")}
+            <input id="login-password" type="password" placeholder="••••••" required />
+          </label>
+          <div class="form-actions">
+            <button id="login-submit" class="btn primary" type="submit">${t("signIn")}</button>
+          </div>
+          <small class="muted">${escapeHtml(state.auth.message || t("authRequired"))}</small>
+        </form>
+      </section>
+      <footer class="app-footer">${appFooterHtml()}</footer>
+    </div>
+  `;
+}
+
 function deriveClockLeadAssessment(clockInHours, leadTimeHours) {
   const clock = Number(clockInHours);
   const lead = Number(leadTimeHours);
@@ -1418,6 +1565,11 @@ function deriveClockLeadAssessment(clockInHours, leadTimeHours) {
 }
 
 function bindEvents(rowsDesc) {
+  const loginForm = document.getElementById("login-form");
+  const loginServerUrl = document.getElementById("login-server-url");
+  const loginUsername = document.getElementById("login-username");
+  const loginPassword = document.getElementById("login-password");
+  const loginSubmit = document.getElementById("login-submit");
   const entryForm = document.getElementById("entry-form");
   const settingsForm = document.getElementById("settings-form");
   const rateMode = document.getElementById("entry-rate-mode");
@@ -1444,12 +1596,97 @@ function bindEvents(rowsDesc) {
   const importInvestmentsInput = document.getElementById("import-investments");
   const assetPriceFetchBtn = document.getElementById("asset-price-fetch");
   const bybitSyncBtn = document.getElementById("sync-bybit");
+  const syncLoginBtn = document.getElementById("sync-login");
+  const syncLogoutBtn = document.getElementById("sync-logout");
+  const syncNowBtn = document.getElementById("sync-now");
+  const syncPullBtn = document.getElementById("sync-pull");
+  const syncPushBtn = document.getElementById("sync-push");
   const addExchangeKeyBtn = document.getElementById("add-exchange-key");
   const exchangeKeysContainer = document.getElementById("exchange-keys");
   const assetTypeSelect = document.getElementById("asset-type");
   const assetNameInput = document.getElementById("asset-name");
   const assetSectorInput = document.getElementById("asset-sector");
   const assetCurrencySelect = document.getElementById("asset-currency");
+
+  if (loginForm) {
+    const doLoginSubmit = async (e) => {
+      e.preventDefault();
+      const serverUrl = String(loginServerUrl?.value || "").trim();
+      const username = String(loginUsername?.value || "").trim();
+      const password = String(loginPassword?.value || "");
+      if (!serverUrl || !username || !password) {
+        state.auth.message = t("syncMissingConfig");
+        renderApp();
+        return;
+      }
+      state.auth.busy = true;
+      state.auth.message = "";
+      if (loginSubmit) loginSubmit.disabled = true;
+      try {
+        const loginResult = await loginToSyncServer(serverUrl, username, password);
+        state.auth.password = password;
+        state.auth.authenticated = true;
+        state.settings.syncServerUrl = normalizeServerUrl(serverUrl);
+        state.settings.syncUsername = username;
+        state.settings.syncToken = loginResult.token;
+        state.settings.syncTokenExpiresAt = loginResult.expiresAt;
+        await dataStore.saveSettings(state.settings);
+        try {
+          await runSyncPull();
+        } catch (error) {
+          const msg = String(error?.message || "").trim();
+          console.warn("initial sync pull failed after login:", error);
+          alert(msg ? `${t("syncAutoPullFailed")}\n${msg}` : t("syncAutoPullFailed"));
+        }
+        renderApp();
+      } catch (error) {
+        const reason = String(error?.message || "").trim();
+        state.auth.message = reason ? `${t("syncLoginFailed")} ${reason}` : t("syncLoginFailed");
+        state.auth.authenticated = false;
+        state.settings.syncToken = "";
+        state.settings.syncTokenExpiresAt = "";
+        await dataStore.saveSettings(state.settings);
+        renderApp();
+      } finally {
+        state.auth.busy = false;
+        if (loginSubmit) loginSubmit.disabled = false;
+      }
+    };
+
+    loginForm.addEventListener("submit", doLoginSubmit);
+
+    themeToggle?.addEventListener("click", async () => {
+      const previousTheme = state.settings.theme;
+      state.settings.theme = state.settings.theme === "dark" ? "light" : "dark";
+      applyTheme();
+      renderApp();
+
+      try {
+        await dataStore.saveSettings(state.settings);
+      } catch (error) {
+        console.error("Tema ayarı kaydedilemedi:", error);
+        state.settings.theme = previousTheme;
+        applyTheme();
+        renderApp();
+        alert(t("themeSaveFailed"));
+      }
+    });
+
+    langToggle?.addEventListener("click", async () => {
+      const previousLang = state.settings.language;
+      state.settings.language = state.settings.language === "tr" ? "en" : "tr";
+      renderApp();
+
+      try {
+        await dataStore.saveSettings(state.settings);
+      } catch (error) {
+        console.error("Dil ayarı kaydedilemedi:", error);
+        state.settings.language = previousLang;
+        renderApp();
+      }
+    });
+    return;
+  }
 
   document.querySelectorAll(".tab[data-tab]").forEach((tabBtn) => {
     tabBtn.addEventListener("click", () => {
@@ -1699,6 +1936,99 @@ function bindEvents(rowsDesc) {
     }
   });
 
+  syncLoginBtn?.addEventListener("click", async () => {
+    const serverUrl = String(document.getElementById("setting-sync-url")?.value || "").trim();
+    const username = String(document.getElementById("setting-sync-username")?.value || "").trim();
+    const password = String(document.getElementById("setting-sync-password")?.value || "");
+    if (!serverUrl || !username || !password) {
+      alert(t("syncMissingConfig"));
+      return;
+    }
+    syncLoginBtn.disabled = true;
+    try {
+      const loginResult = await loginToSyncServer(serverUrl, username, password);
+      state.auth.password = password;
+      state.auth.authenticated = true;
+      state.settings.syncServerUrl = normalizeServerUrl(serverUrl);
+      state.settings.syncUsername = username;
+      state.settings.syncToken = loginResult.token;
+      state.settings.syncTokenExpiresAt = loginResult.expiresAt;
+      await dataStore.saveSettings(state.settings);
+      try {
+        await runSyncPull();
+      } catch (error) {
+        const msg = String(error?.message || "").trim();
+        console.warn("initial sync pull failed after settings login:", error);
+        alert(msg ? `${t("syncAutoPullFailed")}\n${msg}` : t("syncAutoPullFailed"));
+      }
+      renderApp();
+    } catch (error) {
+      const msg = String(error?.message || "").trim();
+      alert(msg ? `${t("syncLoginFailed")}\n${msg}` : t("syncLoginFailed"));
+    } finally {
+      syncLoginBtn.disabled = false;
+    }
+  });
+
+  syncLogoutBtn?.addEventListener("click", async () => {
+    syncLogoutBtn.disabled = true;
+    try {
+      await logoutSyncServer();
+    } finally {
+      state.auth.password = "";
+      state.auth.authenticated = false;
+      state.settings.syncToken = "";
+      state.settings.syncTokenExpiresAt = "";
+      await dataStore.saveSettings(state.settings);
+      renderApp();
+      syncLogoutBtn.disabled = false;
+    }
+  });
+
+  syncPullBtn?.addEventListener("click", async () => {
+    syncPullBtn.disabled = true;
+    try {
+      await runSyncPull();
+      alert(t("syncDone"));
+    } catch (error) {
+      const msg = String(error?.message || "").trim();
+      alert(msg ? `${t("syncFailed")}\n${msg}` : t("syncFailed"));
+    } finally {
+      syncPullBtn.disabled = false;
+      renderApp();
+    }
+  });
+
+  syncPushBtn?.addEventListener("click", async () => {
+    syncPushBtn.disabled = true;
+    try {
+      await runSyncPush();
+      alert(t("syncDone"));
+    } catch (error) {
+      const msg = String(error?.message || "").trim();
+      alert(msg ? `${t("syncFailed")}\n${msg}` : t("syncFailed"));
+    } finally {
+      syncPushBtn.disabled = false;
+      renderApp();
+    }
+  });
+
+  syncNowBtn?.addEventListener("click", async () => {
+    syncNowBtn.disabled = true;
+    try {
+      await runSyncPull();
+      await runSyncPush();
+      await runSyncPull();
+      alert(t("syncDone"));
+    } catch (error) {
+      const msg = String(error?.message || "").trim();
+      alert(msg ? `${t("syncFailed")}\n${msg}` : t("syncFailed"));
+    } finally {
+      syncNowBtn.disabled = false;
+      renderApp();
+    }
+  });
+
   addExchangeKeyBtn?.addEventListener("click", () => {
     if (!exchangeKeysContainer) return;
     const row = document.createElement("div");
@@ -1874,6 +2204,9 @@ function bindEvents(rowsDesc) {
     const weeklyTargetHours = Number(document.getElementById("setting-weekly-target").value);
     const monthlyTargetHours = Number(document.getElementById("setting-monthly-target").value);
     const language = document.getElementById("setting-language").value;
+    const syncServerUrl = String(document.getElementById("setting-sync-url")?.value || "").trim();
+    const syncUsername = String(document.getElementById("setting-sync-username")?.value || "").trim();
+    const syncPassword = String(document.getElementById("setting-sync-password")?.value || "");
     const vaultPasswordInput = document.getElementById("setting-vault-password");
     const vaultPassword = String(vaultPasswordInput?.value || "").trim();
     state.vaultPassword = vaultPassword;
@@ -1951,9 +2284,15 @@ function bindEvents(rowsDesc) {
       weeklyTargetHours: round(weeklyTargetHours, 2),
       monthlyTargetHours: round(monthlyTargetHours, 2),
       language: language === "en" ? "en" : "tr",
+      syncServerUrl: normalizeServerUrl(syncServerUrl),
+      syncUsername,
       exchangeKeys: sanitizedKeys,
       visibleTabs: normalizeVisibleTabs(nextVisibleTabs)
     };
+
+    if (syncPassword) {
+      state.auth.password = syncPassword;
+    }
 
     await dataStore.saveSettings(state.settings);
     await refreshExchangeKeyStatus();
@@ -4180,6 +4519,215 @@ function toNum(value) {
     .replace(/₺/g, "")
     .replace(/,/g, "");
   return Number(cleaned);
+}
+
+function normalizeServerUrl(url) {
+  const raw = String(url || "").trim();
+  if (!raw) return "";
+  const withScheme = /^https?:\/\//i.test(raw) ? raw : `http://${raw}`;
+  return withScheme.replace(/\/+$/, "");
+}
+
+function hasValidSyncToken() {
+  const token = String(state.settings.syncToken || "").trim();
+  const expiry = String(state.settings.syncTokenExpiresAt || "").trim();
+  if (!token || !expiry) return false;
+  const ts = Date.parse(expiry);
+  if (!Number.isFinite(ts)) return false;
+  return ts > Date.now();
+}
+
+async function loginToSyncServer(serverUrl, username, password) {
+  const baseUrl = normalizeServerUrl(serverUrl);
+  const res = await fetch(`${baseUrl}/auth/login`, {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({ username, password })
+  });
+  const body = await res.json().catch(() => ({}));
+  if (!res.ok) {
+    throw new Error(body?.error || `${res.status}`);
+  }
+  const token = String(body?.token || "").trim();
+  const expiresAt = String(body?.expires_at || "").trim();
+  if (!token || !expiresAt) {
+    throw new Error("invalid login response");
+  }
+  return { token, expiresAt };
+}
+
+async function ensureSyncSession() {
+  if (hasValidSyncToken()) return;
+  if (!state.auth.password) {
+    state.auth.authenticated = false;
+    state.settings.syncToken = "";
+    state.settings.syncTokenExpiresAt = "";
+    await dataStore.saveSettings(state.settings);
+    throw new Error(t("syncUnauthorized"));
+  }
+  const result = await loginToSyncServer(
+    state.settings.syncServerUrl,
+    state.settings.syncUsername,
+    state.auth.password
+  );
+  state.settings.syncToken = result.token;
+  state.settings.syncTokenExpiresAt = result.expiresAt;
+  state.auth.authenticated = true;
+  await dataStore.saveSettings(state.settings);
+}
+
+async function syncRequest(path, init = {}, retry = true) {
+  await ensureSyncSession();
+  const baseUrl = normalizeServerUrl(state.settings.syncServerUrl);
+  const headers = {
+    ...(init.headers || {}),
+    authorization: `Bearer ${state.settings.syncToken}`
+  };
+  const res = await fetch(`${baseUrl}${path}`, { ...init, headers });
+  if (res.status === 401 && retry) {
+    state.settings.syncToken = "";
+    state.settings.syncTokenExpiresAt = "";
+    await dataStore.saveSettings(state.settings);
+    try {
+      await ensureSyncSession();
+    } catch {
+      state.auth.authenticated = false;
+      throw new Error(t("syncUnauthorized"));
+    }
+    return syncRequest(path, init, false);
+  }
+  return res;
+}
+
+function syncMeta(now) {
+  return {
+    updated_at: now,
+    client_id: state.settings.syncClientId || uid(),
+    deleted_at: null
+  };
+}
+
+async function runSyncPush() {
+  const now = new Date().toISOString();
+  if (!state.settings.syncClientId) {
+    state.settings.syncClientId = uid();
+  }
+  const workLogs = state.logs.map((log) => ({ ...log, ...syncMeta(now) }));
+  const expenses = state.expenses.map((expense) => ({ ...expense, ...syncMeta(now) }));
+  const clockLead = [{
+    id: "clock_lead",
+    clock_in_hours: Number(state.settings.clockInHours) || 0,
+    lead_time_hours: Number(state.settings.leadTimeHours) || 0,
+    ...syncMeta(now)
+  }];
+  const settingsPayload = {
+    standardRateUsd: state.settings.standardRateUsd,
+    specialRateUsd: state.settings.specialRateUsd,
+    usdTry: state.settings.usdTry,
+    cycleResetRule: state.settings.cycleResetRule,
+    weeklyTargetHours: state.settings.weeklyTargetHours,
+    monthlyTargetHours: state.settings.monthlyTargetHours,
+    theme: state.settings.theme,
+    language: state.settings.language,
+    ...syncMeta(now)
+  };
+
+  const response = await syncRequest("/sync/push", {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({
+      client_time: now,
+      changes: {
+        work_logs: workLogs,
+        expenses,
+        settings: settingsPayload,
+        clock_lead: clockLead
+      }
+    })
+  });
+  const body = await response.json().catch(() => ({}));
+  if (!response.ok) {
+    throw new Error(body?.error || `${response.status}`);
+  }
+  state.settings.syncLastSyncAt = String(body?.server_time || now);
+  await dataStore.saveSettings(state.settings);
+}
+
+async function runSyncPull() {
+  if (!state.settings.syncClientId) {
+    state.settings.syncClientId = uid();
+  }
+  const since = encodeURIComponent(String(state.settings.syncLastSyncAt || ""));
+  const response = await syncRequest(`/sync/changes?since=${since}`, {
+    method: "GET"
+  });
+  const body = await response.json().catch(() => ({}));
+  if (!response.ok) {
+    throw new Error(body?.error || `${response.status}`);
+  }
+  const changes = body?.changes || {};
+
+  const previousLogs = [...state.logs];
+  const previousExpenses = [...state.expenses];
+  const logsMap = new Map(previousLogs.map((item) => [item.id, item]));
+  for (const item of (changes.work_logs || [])) {
+    const id = String(item?.id || "").trim();
+    if (!id) continue;
+    if (item?.deleted_at) logsMap.delete(id);
+    else logsMap.set(id, { ...logsMap.get(id), ...item });
+  }
+
+  const expenseMap = new Map(previousExpenses.map((item) => [item.id, item]));
+  for (const item of (changes.expenses || [])) {
+    const id = String(item?.id || "").trim();
+    if (!id) continue;
+    if (item?.deleted_at) expenseMap.delete(id);
+    else expenseMap.set(id, { ...expenseMap.get(id), ...item });
+  }
+
+  const clockItems = Array.isArray(changes.clock_lead) ? changes.clock_lead : [];
+  if (clockItems.length) {
+    const latest = clockItems[clockItems.length - 1] || {};
+    if (Number.isFinite(Number(latest.clock_in_hours))) {
+      state.settings.clockInHours = round(Number(latest.clock_in_hours), 2);
+    }
+    if (Number.isFinite(Number(latest.lead_time_hours))) {
+      state.settings.leadTimeHours = round(Number(latest.lead_time_hours), 2);
+    }
+  }
+
+  state.logs = Array.from(logsMap.values());
+  state.expenses = Array.from(expenseMap.values());
+  await dataStore.replaceLogs(state.logs);
+  const nextExpenseIds = new Set(state.expenses.map((x) => x.id));
+  for (const prev of previousExpenses) {
+    if (!nextExpenseIds.has(prev.id)) {
+      await dataStore.deleteExpense(prev.id);
+    }
+  }
+  for (const expense of state.expenses) {
+    await dataStore.upsertExpense(expense);
+  }
+
+  state.settings.syncLastSyncAt = String(body?.server_time || new Date().toISOString());
+  await dataStore.saveSettings(state.settings);
+}
+
+async function logoutSyncServer() {
+  try {
+    if (state.settings.syncToken) {
+      await fetch(`${normalizeServerUrl(state.settings.syncServerUrl)}/auth/logout`, {
+        method: "POST",
+        headers: {
+          "content-type": "application/json",
+          authorization: `Bearer ${state.settings.syncToken}`
+        },
+        body: JSON.stringify({ token: state.settings.syncToken })
+      });
+    }
+  } catch (error) {
+    console.warn("sync logout warning:", error);
+  }
 }
 
 async function openExternalUrl(url) {
