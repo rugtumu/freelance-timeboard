@@ -29,6 +29,7 @@ pub fn run() {
             db::db_get_expenses,
             db::db_upsert_expense,
             db::db_delete_expense,
+            db::db_replace_expenses,
             db::bybit_fetch_investments,
             db::secure_store_exchange_key,
             db::secure_delete_exchange_key,

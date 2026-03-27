@@ -48,6 +48,7 @@ struct ChangesQuery {
 struct ChangesPayload {
     work_logs: Vec<serde_json::Value>,
     expenses: Vec<serde_json::Value>,
+    investments: Vec<serde_json::Value>,
     settings: serde_json::Value,
     clock_lead: Vec<serde_json::Value>,
 }
@@ -120,6 +121,13 @@ fn init_db(path: &PathBuf, default_user: &str, default_pass: &str) -> Result<(),
           client_id TEXT NOT NULL
         );
         CREATE TABLE IF NOT EXISTS expenses (
+          id TEXT PRIMARY KEY,
+          payload TEXT NOT NULL,
+          updated_at TEXT NOT NULL,
+          deleted_at TEXT,
+          client_id TEXT NOT NULL
+        );
+        CREATE TABLE IF NOT EXISTS investments (
           id TEXT PRIMARY KEY,
           payload TEXT NOT NULL,
           updated_at TEXT NOT NULL,
@@ -347,6 +355,7 @@ async fn changes(
 
     let work_logs = fetch_changes(&conn, "work_logs", &since).unwrap_or_default();
     let expenses = fetch_changes(&conn, "expenses", &since).unwrap_or_default();
+    let investments = fetch_changes(&conn, "investments", &since).unwrap_or_default();
     let clock_lead = fetch_changes(&conn, "clock_lead", &since).unwrap_or_default();
     let settings = fetch_settings(&conn, &since).unwrap_or_else(|_| serde_json::json!({}));
 
@@ -357,6 +366,7 @@ async fn changes(
             "changes": {
                 "work_logs": work_logs,
                 "expenses": expenses,
+                "investments": investments,
                 "settings": settings,
                 "clock_lead": clock_lead
             }
@@ -452,6 +462,7 @@ fn now_iso() -> String {
 fn apply_changes(conn: &mut Connection, changes: ChangesPayload) -> Result<(), String> {
     upsert_table(conn, "work_logs", changes.work_logs)?;
     upsert_table(conn, "expenses", changes.expenses)?;
+    upsert_table(conn, "investments", changes.investments)?;
     upsert_table(conn, "clock_lead", changes.clock_lead)?;
     upsert_settings(conn, changes.settings)?;
     Ok(())

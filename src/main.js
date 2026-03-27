@@ -69,6 +69,10 @@ const state = {
 };
 
 let dateDismissHandlerBound = false;
+let autoSyncTimer = null;
+let autoSyncInFlight = false;
+let autoSyncQueued = false;
+let bootstrapSyncStarted = false;
 
 const I18N = {
   tr: {
@@ -573,7 +577,7 @@ async function bootstrap() {
   state.settings = { ...DEFAULT_SETTINGS, ...loaded.settings };
   if (!state.settings.syncClientId) {
     state.settings.syncClientId = uid();
-    await dataStore.saveSettings(state.settings);
+    await dataStore.saveSettings(state.settings, { skipAutoSync: true });
   }
   state.auth.authenticated = hasValidSyncToken();
   if (!state.auth.authenticated) {
@@ -583,6 +587,15 @@ async function bootstrap() {
   await refreshExchangeKeyStatus();
   applyTheme();
   renderApp();
+
+  if (!bootstrapSyncStarted) {
+    bootstrapSyncStarted = true;
+    queueMicrotask(() => {
+      runBootstrapSync().catch((error) => {
+        console.warn("bootstrap sync skipped:", error);
+      });
+    });
+  }
 }
 
 const dataStore = {
@@ -624,7 +637,7 @@ const dataStore = {
     };
   },
 
-  async saveSettings(settings) {
+  async saveSettings(settings, options = {}) {
     if (isTauriRuntime()) {
       const payload = Object.fromEntries(
         Object.entries(settings).map(([k, v]) => {
@@ -633,95 +646,106 @@ const dataStore = {
         })
       );
       await invoke("db_set_settings", { settings: payload });
-      return;
+    } else {
+      localStorage.setItem(STORAGE_KEYS.settings, JSON.stringify(settings));
     }
-
-    localStorage.setItem(STORAGE_KEYS.settings, JSON.stringify(settings));
+    if (!options.skipAutoSync) scheduleAutoSync();
   },
 
-  async upsertLog(log) {
+  async upsertLog(log, options = {}) {
     if (isTauriRuntime()) {
       await invoke("db_upsert_log", { log: mapUiLogToDb(log) });
-      return;
+    } else {
+      const logs = loadLogsFromLocal();
+      const idx = logs.findIndex((x) => x.id === log.id || x.date === log.date);
+      if (idx >= 0) logs[idx] = log;
+      else logs.push(log);
+      localStorage.setItem(STORAGE_KEYS.logs, JSON.stringify(logs));
     }
-
-    const logs = loadLogsFromLocal();
-    const idx = logs.findIndex((x) => x.id === log.id || x.date === log.date);
-    if (idx >= 0) logs[idx] = log;
-    else logs.push(log);
-    localStorage.setItem(STORAGE_KEYS.logs, JSON.stringify(logs));
+    if (!options.skipAutoSync) scheduleAutoSync();
   },
 
-  async deleteLog(id) {
+  async deleteLog(id, options = {}) {
     if (isTauriRuntime()) {
       await invoke("db_delete_log", { id });
-      return;
+    } else {
+      const logs = loadLogsFromLocal().filter((x) => x.id !== id);
+      localStorage.setItem(STORAGE_KEYS.logs, JSON.stringify(logs));
     }
-
-    const logs = loadLogsFromLocal().filter((x) => x.id !== id);
-    localStorage.setItem(STORAGE_KEYS.logs, JSON.stringify(logs));
+    if (!options.skipAutoSync) scheduleAutoSync();
   },
 
-  async replaceLogs(logs) {
+  async replaceLogs(logs, options = {}) {
     if (isTauriRuntime()) {
       await invoke("db_replace_logs", { logs: logs.map(mapUiLogToDb) });
-      return;
+    } else {
+      localStorage.setItem(STORAGE_KEYS.logs, JSON.stringify(logs));
     }
-
-    localStorage.setItem(STORAGE_KEYS.logs, JSON.stringify(logs));
+    if (!options.skipAutoSync) scheduleAutoSync();
   },
 
-  async upsertExpense(expense) {
+  async upsertExpense(expense, options = {}) {
     if (isTauriRuntime()) {
       await invoke("db_upsert_expense", { expense: mapUiExpenseToDb(expense) });
-      return;
+    } else {
+      const expenses = loadExpensesFromLocal();
+      const idx = expenses.findIndex((x) => x.id === expense.id);
+      if (idx >= 0) expenses[idx] = expense;
+      else expenses.push(expense);
+      localStorage.setItem(STORAGE_KEYS.expenses, JSON.stringify(expenses));
     }
-
-    const expenses = loadExpensesFromLocal();
-    const idx = expenses.findIndex((x) => x.id === expense.id);
-    if (idx >= 0) expenses[idx] = expense;
-    else expenses.push(expense);
-    localStorage.setItem(STORAGE_KEYS.expenses, JSON.stringify(expenses));
+    if (!options.skipAutoSync) scheduleAutoSync();
   },
 
-  async upsertInvestment(investment) {
+  async upsertInvestment(investment, options = {}) {
     if (isTauriRuntime()) {
       await invoke("db_upsert_investment", { investment: mapUiInvestmentToDb(investment) });
-      return;
+    } else {
+      const investments = loadInvestmentsFromLocal();
+      const idx = investments.findIndex((x) => x.id === investment.id);
+      if (idx >= 0) investments[idx] = investment;
+      else investments.push(investment);
+      localStorage.setItem(STORAGE_KEYS.investments, JSON.stringify(investments));
     }
-
-    const investments = loadInvestmentsFromLocal();
-    const idx = investments.findIndex((x) => x.id === investment.id);
-    if (idx >= 0) investments[idx] = investment;
-    else investments.push(investment);
-    localStorage.setItem(STORAGE_KEYS.investments, JSON.stringify(investments));
+    if (!options.skipAutoSync) scheduleAutoSync();
   },
 
-  async deleteInvestment(id) {
+  async deleteInvestment(id, options = {}) {
     if (isTauriRuntime()) {
       await invoke("db_delete_investment", { id });
-      return;
+    } else {
+      const investments = loadInvestmentsFromLocal().filter((x) => x.id !== id);
+      localStorage.setItem(STORAGE_KEYS.investments, JSON.stringify(investments));
     }
-    const investments = loadInvestmentsFromLocal().filter((x) => x.id !== id);
-    localStorage.setItem(STORAGE_KEYS.investments, JSON.stringify(investments));
+    if (!options.skipAutoSync) scheduleAutoSync();
   },
 
-  async replaceInvestments(investments) {
+  async replaceInvestments(investments, options = {}) {
     if (isTauriRuntime()) {
       await invoke("db_replace_investments", { investments: investments.map(mapUiInvestmentToDb) });
-      return;
+    } else {
+      localStorage.setItem(STORAGE_KEYS.investments, JSON.stringify(investments));
     }
-    localStorage.setItem(STORAGE_KEYS.investments, JSON.stringify(investments));
+    if (!options.skipAutoSync) scheduleAutoSync();
   },
 
-  async deleteExpense(id) {
+  async deleteExpense(id, options = {}) {
     if (isTauriRuntime()) {
       await invoke("db_delete_expense", { id });
-      return;
+    } else {
+      const expenses = loadExpensesFromLocal().filter((x) => x.id !== id);
+      localStorage.setItem(STORAGE_KEYS.expenses, JSON.stringify(expenses));
     }
+    if (!options.skipAutoSync) scheduleAutoSync();
+  },
 
-    const expenses = loadExpensesFromLocal().filter((x) => x.id !== id);
-    localStorage.setItem(STORAGE_KEYS.expenses, JSON.stringify(expenses));
+  async replaceExpenses(expenses, options = {}) {
+    if (isTauriRuntime()) {
+      await invoke("db_replace_expenses", { expenses: expenses.map(mapUiExpenseToDb) });
+    } else {
+      localStorage.setItem(STORAGE_KEYS.expenses, JSON.stringify(expenses));
+    }
+    if (!options.skipAutoSync) scheduleAutoSync();
   }
 };
 
@@ -2016,9 +2040,7 @@ function bindEvents(rowsDesc) {
   syncNowBtn?.addEventListener("click", async () => {
     syncNowBtn.disabled = true;
     try {
-      await runSyncPull();
-      await runSyncPush();
-      await runSyncPull();
+      await performSyncNow();
       alert(t("syncDone"));
     } catch (error) {
       const msg = String(error?.message || "").trim();
@@ -4528,6 +4550,61 @@ function normalizeServerUrl(url) {
   return withScheme.replace(/\/+$/, "");
 }
 
+function canAutoSync() {
+  return Boolean(
+    state.settings.syncServerUrl &&
+    state.settings.syncUsername &&
+    (hasValidSyncToken() || state.auth.password)
+  );
+}
+
+function scheduleAutoSync(delayMs = 1200) {
+  if (!canAutoSync()) return;
+  if (autoSyncTimer) clearTimeout(autoSyncTimer);
+  autoSyncTimer = setTimeout(() => {
+    autoSyncTimer = null;
+    performSyncNow({ quiet: true }).catch((error) => {
+      console.warn("auto sync failed:", error);
+    });
+  }, delayMs);
+}
+
+async function performSyncNow(options = {}) {
+  const { quiet = false } = options;
+  if (autoSyncInFlight) {
+    autoSyncQueued = true;
+    return;
+  }
+  autoSyncInFlight = true;
+  try {
+    await runSyncPull();
+    await runSyncPush();
+    await runSyncPull();
+  } catch (error) {
+    if (!quiet) throw error;
+    console.warn("sync now failed:", error);
+  } finally {
+    autoSyncInFlight = false;
+    renderApp();
+  }
+
+  if (autoSyncQueued) {
+    autoSyncQueued = false;
+    return performSyncNow(options);
+  }
+}
+
+async function runBootstrapSync() {
+  if (!state.settings.syncServerUrl || !state.settings.syncUsername) return;
+  if (!hasValidSyncToken()) return;
+  try {
+    await runSyncPull();
+    renderApp();
+  } catch (error) {
+    console.warn("bootstrap pull failed:", error);
+  }
+}
+
 function hasValidSyncToken() {
   const token = String(state.settings.syncToken || "").trim();
   const expiry = String(state.settings.syncTokenExpiresAt || "").trim();
@@ -4614,6 +4691,7 @@ async function runSyncPush() {
   }
   const workLogs = state.logs.map((log) => ({ ...log, ...syncMeta(now) }));
   const expenses = state.expenses.map((expense) => ({ ...expense, ...syncMeta(now) }));
+  const investments = state.investments.map((investment) => ({ ...investment, ...syncMeta(now) }));
   const clockLead = [{
     id: "clock_lead",
     clock_in_hours: Number(state.settings.clockInHours) || 0,
@@ -4640,6 +4718,7 @@ async function runSyncPush() {
       changes: {
         work_logs: workLogs,
         expenses,
+        investments,
         settings: settingsPayload,
         clock_lead: clockLead
       }
@@ -4669,6 +4748,7 @@ async function runSyncPull() {
 
   const previousLogs = [...state.logs];
   const previousExpenses = [...state.expenses];
+  const previousInvestments = [...state.investments];
   const logsMap = new Map(previousLogs.map((item) => [item.id, item]));
   for (const item of (changes.work_logs || [])) {
     const id = String(item?.id || "").trim();
@@ -4685,6 +4765,14 @@ async function runSyncPull() {
     else expenseMap.set(id, { ...expenseMap.get(id), ...item });
   }
 
+  const investmentMap = new Map(previousInvestments.map((item) => [item.id, item]));
+  for (const item of (changes.investments || [])) {
+    const id = String(item?.id || "").trim();
+    if (!id) continue;
+    if (item?.deleted_at) investmentMap.delete(id);
+    else investmentMap.set(id, { ...investmentMap.get(id), ...item });
+  }
+
   const clockItems = Array.isArray(changes.clock_lead) ? changes.clock_lead : [];
   if (clockItems.length) {
     const latest = clockItems[clockItems.length - 1] || {};
@@ -4698,19 +4786,30 @@ async function runSyncPull() {
 
   state.logs = Array.from(logsMap.values());
   state.expenses = Array.from(expenseMap.values());
-  await dataStore.replaceLogs(state.logs);
+  state.investments = Array.from(investmentMap.values());
+  await dataStore.replaceLogs(state.logs, { skipAutoSync: true });
   const nextExpenseIds = new Set(state.expenses.map((x) => x.id));
   for (const prev of previousExpenses) {
     if (!nextExpenseIds.has(prev.id)) {
-      await dataStore.deleteExpense(prev.id);
+      await dataStore.deleteExpense(prev.id, { skipAutoSync: true });
     }
   }
   for (const expense of state.expenses) {
-    await dataStore.upsertExpense(expense);
+    await dataStore.upsertExpense(expense, { skipAutoSync: true });
+  }
+
+  const nextInvestmentIds = new Set(state.investments.map((x) => x.id));
+  for (const prev of previousInvestments) {
+    if (!nextInvestmentIds.has(prev.id)) {
+      await dataStore.deleteInvestment(prev.id, { skipAutoSync: true });
+    }
+  }
+  for (const investment of state.investments) {
+    await dataStore.upsertInvestment(investment, { skipAutoSync: true });
   }
 
   state.settings.syncLastSyncAt = String(body?.server_time || new Date().toISOString());
-  await dataStore.saveSettings(state.settings);
+  await dataStore.saveSettings(state.settings, { skipAutoSync: true });
 }
 
 async function logoutSyncServer() {

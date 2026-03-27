@@ -496,6 +496,45 @@ pub fn db_delete_expense(app: tauri::AppHandle, id: String) -> Result<(), String
 }
 
 #[tauri::command]
+pub fn db_replace_expenses(app: tauri::AppHandle, expenses: Vec<Expense>) -> Result<(), String> {
+    let mut conn = open_conn(&app)?;
+    let tx = conn
+        .transaction()
+        .map_err(|e| format!("expenses transaction start error: {e}"))?;
+
+    tx.execute("DELETE FROM expenses", [])
+        .map_err(|e| format!("replace expenses clear error: {e}"))?;
+
+    {
+        let mut stmt = tx
+            .prepare(
+                "
+            INSERT INTO expenses (id, date, amount, currency, category, note)
+            VALUES (?1, ?2, ?3, ?4, ?5, ?6)
+            ",
+            )
+            .map_err(|e| format!("replace expenses prepare error: {e}"))?;
+
+        for expense in expenses {
+            stmt.execute(params![
+                expense.id,
+                expense.date,
+                expense.amount,
+                expense.currency,
+                expense.category,
+                expense.note
+            ])
+            .map_err(|e| format!("replace expenses insert error: {e}"))?;
+        }
+    }
+
+    tx.commit()
+        .map_err(|e| format!("replace expenses commit error: {e}"))?;
+
+    Ok(())
+}
+
+#[tauri::command]
 pub async fn bybit_fetch_investments(app: tauri::AppHandle, vault_password: Option<String>) -> Result<Vec<Investment>, String> {
     let creds = get_exchange_key_with_fallback(&app, "bybit", vault_password)?;
     if creds.api_key.is_empty() || creds.api_secret.is_empty() {
