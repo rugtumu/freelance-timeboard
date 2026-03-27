@@ -64,7 +64,8 @@ const state = {
     authenticated: false,
     password: "",
     busy: false,
-    message: ""
+    message: "",
+    showLoginConfig: false
   }
 };
 
@@ -162,6 +163,9 @@ const I18N = {
     syncDisconnected: "Bağlı değil",
     syncLoginFailed: "Giriş başarısız.",
     syncMissingConfig: "Sunucu URL ve kullanıcı adı gerekli.",
+    syncSavedConnection: "Kayıtlı bağlantı",
+    syncEditConnection: "Bağlantı ayarlarını düzenle",
+    syncHideConnection: "Bağlantı ayarlarını gizle",
     syncUnauthorized: "Oturum süresi doldu. Lütfen tekrar giriş yap.",
     syncDone: "Senkronizasyon tamamlandı.",
     syncFailed: "Senkronizasyon başarısız oldu.",
@@ -403,6 +407,9 @@ const I18N = {
     syncDisconnected: "Disconnected",
     syncLoginFailed: "Login failed.",
     syncMissingConfig: "Server URL and username are required.",
+    syncSavedConnection: "Saved connection",
+    syncEditConnection: "Edit connection settings",
+    syncHideConnection: "Hide connection settings",
     syncUnauthorized: "Session expired. Please sign in again.",
     syncDone: "Sync completed.",
     syncFailed: "Sync failed.",
@@ -1512,6 +1519,8 @@ function appFooterHtml() {
 }
 
 function loginScreenHtml() {
+  const hasSavedConnection = Boolean(state.settings.syncServerUrl && state.settings.syncUsername);
+  const showLoginConfig = !hasSavedConnection || state.auth.showLoginConfig;
   return `
     <div class="shell">
       <header class="hero">
@@ -1531,6 +1540,15 @@ function loginScreenHtml() {
       </header>
       <section class="card" style="max-width:560px; margin:0 auto;">
         <form id="login-form" class="form-grid">
+          ${hasSavedConnection ? `
+          <div class="full">
+            <small class="muted">${t("syncSavedConnection")}: ${escapeHtml(state.settings.syncUsername)} @ ${escapeHtml(state.settings.syncServerUrl)}</small>
+          </div>
+          <div class="form-actions">
+            <button id="toggle-login-config" class="btn ghost" type="button">${t(showLoginConfig ? "syncHideConnection" : "syncEditConnection")}</button>
+          </div>
+          ` : ""}
+          ${showLoginConfig ? `
           <label class="full">
             ${t("syncServerUrl")}
             <input id="login-server-url" type="text" placeholder="http://192.168.0.200:8080" value="${escapeHtml(state.settings.syncServerUrl || "")}" required />
@@ -1539,6 +1557,10 @@ function loginScreenHtml() {
             ${t("syncUsername")}
             <input id="login-username" type="text" value="${escapeHtml(state.settings.syncUsername || "")}" required />
           </label>
+          ` : `
+          <input id="login-server-url" type="hidden" value="${escapeHtml(state.settings.syncServerUrl || "")}" />
+          <input id="login-username" type="hidden" value="${escapeHtml(state.settings.syncUsername || "")}" />
+          `}
           <label class="full">
             ${t("syncPassword")}
             <input id="login-password" type="password" placeholder="••••••" required />
@@ -1594,6 +1616,7 @@ function bindEvents(rowsDesc) {
   const loginUsername = document.getElementById("login-username");
   const loginPassword = document.getElementById("login-password");
   const loginSubmit = document.getElementById("login-submit");
+  const toggleLoginConfigBtn = document.getElementById("toggle-login-config");
   const entryForm = document.getElementById("entry-form");
   const settingsForm = document.getElementById("settings-form");
   const rateMode = document.getElementById("entry-rate-mode");
@@ -1633,6 +1656,11 @@ function bindEvents(rowsDesc) {
   const assetCurrencySelect = document.getElementById("asset-currency");
 
   if (loginForm) {
+    toggleLoginConfigBtn?.addEventListener("click", () => {
+      state.auth.showLoginConfig = !state.auth.showLoginConfig;
+      renderApp();
+    });
+
     const doLoginSubmit = async (e) => {
       e.preventDefault();
       const serverUrl = String(loginServerUrl?.value || "").trim();
@@ -1650,6 +1678,7 @@ function bindEvents(rowsDesc) {
         const loginResult = await loginToSyncServer(serverUrl, username, password);
         state.auth.password = password;
         state.auth.authenticated = true;
+        state.auth.showLoginConfig = false;
         state.settings.syncServerUrl = normalizeServerUrl(serverUrl);
         state.settings.syncUsername = username;
         state.settings.syncToken = loginResult.token;
