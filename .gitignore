@@ -8,6 +8,7 @@ coverage/
 
 # Tauri / Rust
 src-tauri/target/
+pi-server/target/
 **/*.rs.bk
 src-tauri/gen/android/
 

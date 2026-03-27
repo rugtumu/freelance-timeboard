@@ -1,0 +1,16 @@
+[Unit]
+Description=FTB Pi Sync Server
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=kertenkelebek
+WorkingDirectory=/home/kertenkelebek/Belgeler/projects/freelance-timeboard/pi-server
+EnvironmentFile=/etc/default/ftb-pi-sync
+ExecStart=/home/kertenkelebek/Belgeler/projects/freelance-timeboard/pi-server/target/release/ftb-pi-sync
+Restart=always
+RestartSec=3
+
+[Install]
+WantedBy=multi-user.target

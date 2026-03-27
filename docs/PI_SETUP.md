@@ -18,6 +18,9 @@ rustc --version
 cargo --version
 ```
 
+Not:
+- Debian 13 / Raspberry Pi üstünde sistem `rustc` sürümüyle uyumluluk için `pi-server` şu an `time = 0.3.36` sürümüne sabitlenmiştir.
+
 ## 2) Repo'yu Pi'ya al
 
 İlk kurulum:
@@ -38,7 +41,7 @@ git pull
 
 ```bash
 cd ~/freelance-timeboard/pi-server
-FTB_PORT=8080 \
+FTB_PORT=9090 \
 FTB_DB_PATH=./data/sync.db \
 FTB_USER=umut \
 FTB_PASS='GUCLU_BIR_SIFRE' \
@@ -55,13 +58,13 @@ Notlar:
 Ayrı terminalde:
 
 ```bash
-curl http://127.0.0.1:8080/health
+curl http://127.0.0.1:9090/health
 ```
 
 Login testi:
 
 ```bash
-curl -X POST http://127.0.0.1:8080/auth/login \
+curl -X POST http://127.0.0.1:9090/auth/login \
   -H 'content-type: application/json' \
   -d '{"username":"umut","password":"GUCLU_BIR_SIFRE"}'
 ```
@@ -70,14 +73,14 @@ Token ile changes testi:
 
 ```bash
 TOKEN="<LOGIN_CIKTISINDAKI_TOKEN>"
-curl "http://127.0.0.1:8080/sync/changes?since=" \
+curl "http://127.0.0.1:9090/sync/changes?since=" \
   -H "authorization: Bearer $TOKEN"
 ```
 
 ## 5) Uygulamadan bağlanma
 
 Desktop/Android uygulamada:
-- Server URL: `http://<PI_IP_ADRESI>:8080`
+- Server URL: `http://<PI_IP_ADRESI>:9090`
 - Username: `umut` (veya senin ayarladığın)
 - Password: verdiğin güçlü şifre
 
@@ -108,7 +111,7 @@ Wants=network-online.target
 [Service]
 User=pi
 WorkingDirectory=/home/pi/freelance-timeboard/pi-server
-Environment=FTB_PORT=8080
+Environment=FTB_PORT=9090
 Environment=FTB_DB_PATH=/home/pi/freelance-timeboard/pi-server/data/sync.db
 Environment=FTB_USER=umut
 Environment=FTB_PASS=GUCLU_BIR_SIFRE
